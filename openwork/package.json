@@ -1,0 +1,38 @@
+{
+  "name": "@different-ai/openwork-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "pnpm --filter @different-ai/openwork dev",
+    "dev:ui": "pnpm --filter @different-ai/openwork-ui dev",
+    "dev:web": "pnpm --filter @different-ai/openwork-ui dev",
+    "build": "pnpm --filter @different-ai/openwork build",
+    "build:ui": "pnpm --filter @different-ai/openwork-ui build",
+    "build:web": "pnpm --filter @different-ai/openwork-ui build",
+    "preview": "pnpm --filter @different-ai/openwork-ui preview",
+    "typecheck": "pnpm --filter @different-ai/openwork-ui typecheck",
+    "test:health": "pnpm --filter @different-ai/openwork-ui test:health",
+    "test:sessions": "pnpm --filter @different-ai/openwork-ui test:sessions",
+    "test:refactor": "pnpm --filter @different-ai/openwork-ui test:refactor",
+    "test:events": "pnpm --filter @different-ai/openwork-ui test:events",
+    "test:todos": "pnpm --filter @different-ai/openwork-ui test:todos",
+    "test:permissions": "pnpm --filter @different-ai/openwork-ui test:permissions",
+    "test:session-switch": "pnpm --filter @different-ai/openwork-ui test:session-switch",
+    "test:fs-engine": "pnpm --filter @different-ai/openwork-ui test:fs-engine",
+    "test:e2e": "pnpm --filter @different-ai/openwork-ui test:e2e",
+    "bump:patch": "pnpm --filter @different-ai/openwork-ui bump:patch",
+    "bump:minor": "pnpm --filter @different-ai/openwork-ui bump:minor",
+    "bump:major": "pnpm --filter @different-ai/openwork-ui bump:major",
+    "bump:set": "pnpm --filter @different-ai/openwork-ui bump:set",
+    "tauri": "pnpm --filter @different-ai/openwork exec tauri"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@whiskeysockets/baileys",
+      "better-sqlite3",
+      "esbuild",
+      "protobufjs"
+    ]
+  },
+  "packageManager": "pnpm@10.27.0"
+}

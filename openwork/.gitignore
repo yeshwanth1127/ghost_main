@@ -1,0 +1,25 @@
+node_modules/
+packages/*/node_modules/
+.next/
+out/
+dist/
+packages/*/dist/
+
+# Tauri/Rust
+packages/desktop/src-tauri/target/
+packages/desktop/src-tauri/sidecars/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# OpenCode mirror
+vendor/opencode/
+
+# OpenCode local deps
+.opencode/node_modules/
+.opencode/bun.lock
