@@ -1,0 +1,3 @@
+
+# Ignore accidental embedded git repos
+scribe/scribe.git/

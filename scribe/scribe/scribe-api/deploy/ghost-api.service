@@ -1,0 +1,17 @@
+[Unit]
+Description=Ghost API Service
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=ghost
+WorkingDirectory=/opt/ghost-api
+EnvironmentFile=/opt/ghost-api/.env
+ExecStart=/opt/ghost-api/target/release/ghost-api
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+
+

@@ -1,0 +1,84 @@
+use tauri::{App, Manager, WebviewWindow, Size, LogicalSize};
+
+// The offset from the top of the screen to the window
+const TOP_OFFSET: i32 = 196;
+
+/// Sets up the main window with custom positioning
+pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    // Try different possible window labels
+    let window = app
+        .get_webview_window("main")
+        .or_else(|| app.get_webview_window("Ghost"))
+        .or_else(|| {
+            // Get the first window if specific labels don't work
+            app.webview_windows().values().next().cloned()
+        })
+        .ok_or("No window found")?;
+
+    // Ensure an initial height that fits larger UI before React mounts
+    let _ = window.set_size(Size::Logical(LogicalSize::new(700.0, 200.0)));
+    position_window_top_center(&window, TOP_OFFSET)?;
+    
+    // Set window as non-focusable on Windows
+    // #[cfg(target_os = "windows")]
+    // {
+    //     let _ = window.set_focusable(false);
+    // }
+
+    Ok(())
+}
+
+/// Positions a window at the top center of the screen with a specified Y offset
+pub fn position_window_top_center(
+    window: &WebviewWindow,
+    y_offset: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Get the primary monitor
+    if let Some(monitor) = window.primary_monitor()? {
+        let monitor_size = monitor.size();
+        let window_size = window.outer_size()?;
+
+        // Calculate center X position
+        let center_x = (monitor_size.width as i32 - window_size.width as i32) / 2;
+
+        // Set the window position
+        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: center_x,
+            y: y_offset,
+        }))?;
+    }
+
+    Ok(())
+}
+
+/// Future function for centering window completely (both X and Y)
+#[allow(dead_code)]
+pub fn center_window_completely(window: &WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(monitor) = window.primary_monitor()? {
+        let monitor_size = monitor.size();
+        let window_size = window.outer_size()?;
+
+        let center_x = (monitor_size.width as i32 - window_size.width as i32) / 2;
+        let center_y = (monitor_size.height as i32 - window_size.height as i32) / 2;
+
+        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+            x: center_x,
+            y: center_y,
+        }))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_window_height(window: tauri::WebviewWindow, height: u32) -> Result<(), String> {
+    use tauri::{LogicalSize, Size};
+
+    // Simply set the window size with fixed width and new height
+    let new_size = LogicalSize::new(700.0, height as f64);
+    window
+        .set_size(Size::Logical(new_size))
+        .map_err(|e| format!("Failed to resize window: {}", e))?;
+
+    Ok(())
+}

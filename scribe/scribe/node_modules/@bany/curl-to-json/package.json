@@ -1,0 +1,33 @@
+{
+  "name": "@bany/curl-to-json",
+  "version": "1.2.8",
+  "description": "Convert curl format to json",
+  "main": "src/pare-json.js",
+  "typings": "src/index.d.ts",
+  "scripts": {
+    "test": "mocha"
+  },
+  "keywords": [
+    "nodejs",
+    "convertor",
+    "curl-to-json",
+    "curl-convertor",
+    "curl-convertor-to-json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/9bany/curl-to-json.git"
+  },
+  "author": "rony",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/9bany/curl-to-json/issues"
+  },
+  "homepage": "https://github.com/9bany/curl-to-json#readme",
+  "dependencies": {
+    "minimist": "^1.2.8"
+  },
+  "devDependencies": {
+    "mocha": "^10.0.0"
+  }
+}

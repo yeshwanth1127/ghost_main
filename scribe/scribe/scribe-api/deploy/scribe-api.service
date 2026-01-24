@@ -1,0 +1,15 @@
+[Unit]
+Description=Scribe API Service
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=scribe
+WorkingDirectory=/opt/scribe-api
+EnvironmentFile=/opt/scribe-api/.env
+ExecStart=/opt/scribe-api/target/release/scribe-api
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
