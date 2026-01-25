@@ -57,15 +57,12 @@ pub async fn preview_action_plan(
     // Build preview result
     let mut affected_items = Vec::new();
     let mut missing_paths = Vec::new();
-    let warnings: Vec<String> = verified.verification_notes.clone();
+    let _warnings: Vec<String> = verified.verification_notes.clone();
 
     for action in &plan.schema.actions {
-        let mut needs_path = false;
-        
         if let Some(path_value) = action.args.get("path") {
             if let Some(path_str) = path_value.as_str() {
                 if path_str == "__PROMPT_PATH__" {
-                    needs_path = true;
                     missing_paths.push(action.id.clone());
                     affected_items.push(AffectedItem {
                         path: "[Path needed]".to_string(),
@@ -85,7 +82,6 @@ pub async fn preview_action_plan(
         if let Some(dst_path_value) = action.args.get("destination_path") {
             if let Some(dst_path_str) = dst_path_value.as_str() {
                 if dst_path_str == "__PROMPT_PATH__" {
-                    needs_path = true;
                     missing_paths.push(action.id.clone());
                     affected_items.push(AffectedItem {
                         path: "[Destination path needed]".to_string(),
@@ -105,7 +101,7 @@ pub async fn preview_action_plan(
         if let Some(src_path_value) = action.args.get("source_path") {
             if let Some(src_path_str) = src_path_value.as_str() {
                 if src_path_str == "__PROMPT_PATH__" {
-                    needs_path = true;
+                    // needs_path = true; // Tracked via missing_paths instead
                     missing_paths.push(action.id.clone());
                 }
             }
@@ -166,8 +162,8 @@ pub async fn undo_action(
 /// Get audit history
 #[tauri::command]
 pub async fn get_audit_history(
-    app: AppHandle,
-    limit: i32,
+    _app: AppHandle,
+    _limit: i32,
 ) -> Result<Vec<AuditEntry>, String> {
     // Audit history is fetched via frontend database actions
     // This returns empty - frontend should use getAuditLogsFromDB() instead

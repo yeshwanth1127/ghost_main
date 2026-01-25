@@ -1,4 +1,5 @@
 use crate::config::Config;
+use futures::stream::BoxStream;
 use futures::StreamExt;
 
 #[derive(Clone)]
@@ -21,7 +22,7 @@ impl OpenRouterService {
         images: Option<&serde_json::Value>,
         history: Option<&str>,
         model_id: Option<&str>,
-    ) -> Result<impl futures::Stream<Item = Result<String, reqwest::Error>>, reqwest::Error> {
+    ) -> Result<BoxStream<'static, Result<String, reqwest::Error>>, reqwest::Error> {
         let client = reqwest::Client::new();
         
         // Select model: require client-provided model_id; if not provided and images present,
@@ -76,8 +77,20 @@ impl OpenRouterService {
             "stream": true
         });
 
+        let url = format!("{}/chat/completions", self.config.openrouter_base_url);
+        tracing::info!(
+            "🌐 OpenRouter request: url={}, model={}, api_key_len={}",
+            url,
+            model,
+            self.config.openrouter_api_key.len()
+        );
+        tracing::info!(
+            "   payload bytes={}",
+            serde_json::to_string(&body).unwrap_or_default().len()
+        );
+
         let response = client
-            .post(&format!("{}/chat/completions", self.config.openrouter_base_url))
+            .post(&url)
             .header("Authorization", format!("Bearer {}", self.config.openrouter_api_key))
             .header("HTTP-Referer", "https://exora.solutions")
             .header("Content-Type", "application/json")
@@ -85,9 +98,27 @@ impl OpenRouterService {
             .send()
             .await?;
 
+        let status = response.status();
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        tracing::info!(
+            "🌐 OpenRouter response: status={}, content-type={}",
+            status,
+            content_type
+        );
+
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            tracing::error!("❌ OpenRouter error: {}", error_text);
+            return Ok(futures::stream::once(async move { Ok(error_text) }).boxed());
+        }
+
         // Return streaming response
         Ok(response.bytes_stream().map(|chunk| {
             chunk.map(|bytes| String::from_utf8_lossy(&bytes).to_string())
-        }))
+        }).boxed())
     }
 }

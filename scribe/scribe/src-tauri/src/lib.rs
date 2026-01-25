@@ -6,6 +6,7 @@ mod window;
 mod db;
 mod capture;
 mod assistant;
+mod agent;
 use tauri_plugin_posthog::{init as posthog_init, PostHogConfig, PostHogOptions};
 use tauri::Manager;
 use std::sync::{Arc, Mutex};
@@ -124,7 +125,7 @@ pub fn run() {
                         // Try option_env! macro values (compile-time)
                         match var_name {
                             "PAYMENT_ENDPOINT" => {
-                                #[cfg(feature = "debug")]
+                                // Note: debug feature check removed - always log
                                 eprintln!("⚠️ {} not found (runtime or compile-time)", var_name);
                             }
                             _ => eprintln!("⚠️ {} not found", var_name),
@@ -162,24 +163,31 @@ pub fn run() {
             is_hidden: Mutex::new(false),
         })
         .manage(shortcuts::RegisteredShortcuts::default())
+        .manage(agent::r#loop::run_loop::RunManager::new())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_keychain::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_machine_uid::init());
         
-        if !posthog_api_key.is_empty() {
-            builder = builder.plugin(posthog_init(PostHogConfig {
-                api_key: posthog_api_key.clone(),
-                options: Some(PostHogOptions {
-                    disable_session_recording: Some(true),
-                    capture_pageview: Some(false),
-                    capture_pageleave: Some(false),
-                    ..Default::default()
-                }),
+        // Only initialize updater if configured (check for updater endpoint in env or config)
+        // For now, we'll skip it to avoid config errors - can be enabled later when needed
+        // builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        
+        // Always initialize PostHog to prevent "plugin not found" errors
+        // If no API key is provided, PostHog will be initialized but won't send events
+        // The frontend handles this gracefully
+        builder = builder.plugin(posthog_init(PostHogConfig {
+            api_key: posthog_api_key.clone(),
+            options: Some(PostHogOptions {
+                disable_session_recording: Some(true),
+                capture_pageview: Some(false),
+                capture_pageleave: Some(false),
                 ..Default::default()
-            }));
-        }
+            }),
+            ..Default::default()
+        }));
         #[cfg(target_os = "macos")]
         {
             builder = builder.plugin(tauri_nspanel::init());
@@ -213,7 +221,6 @@ pub fn run() {
             api::chat_stream,
             api::fetch_models,
             api::create_system_prompt,
-            api::submit_leave_application,
             api::check_license_status,
             speaker::start_system_audio_capture,
             speaker::stop_system_audio_capture,
@@ -232,6 +239,13 @@ pub fn run() {
             assistant::commands::undo_action,
             assistant::commands::get_audit_history,
             assistant::commands::mint_capability_token,
+            agent::create_run,
+            agent::get_run_state,
+            agent::get_run_events,
+            agent::start_run,
+            agent::cancel_run,
+            agent::cancel_all_runs,
+            agent::reply_permission,
         ])
         .setup(|app| {
             // Setup main window positioning
@@ -286,6 +300,15 @@ pub fn run() {
             if let Err(e) = shortcuts::setup_global_shortcuts(app.handle()) {
                 eprintln!("Failed to setup global shortcuts: {}", e);
             }
+            
+            // Resume all non-terminal runs on app start
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = agent::r#loop::run_loop::resume_all_runs(&app_handle).await {
+                    eprintln!("Failed to resume runs on startup: {}", e);
+                }
+            });
+            
            Ok(())
         });
 

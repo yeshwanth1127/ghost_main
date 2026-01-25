@@ -52,8 +52,8 @@ impl AuditLog {
             .map_err(|e| format!("Failed to serialize entry: {}", e))?;
 
         let prev_hash = self.get_last_hash().await?;
-        let signature = Self::generate_signature(&entry_str, &prev_hash);
-        let timestamp = chrono::Utc::now().timestamp();
+        let _signature = Self::generate_signature(&entry_str, &prev_hash);
+        let _timestamp = chrono::Utc::now().timestamp();
         let id = uuid::Uuid::new_v4().to_string();
 
         // Database insertion will be handled by frontend via IPC

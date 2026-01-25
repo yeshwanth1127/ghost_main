@@ -5,7 +5,6 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub database_url: String,
-    pub leave_database_url: String,
     pub redis_url: String,
     pub api_access_key: String,
     pub openrouter_api_key: String,
@@ -24,9 +23,6 @@ impl Config {
             database_url: env::var("DATABASE_URL")
                 .ok()
                 .ok_or("DATABASE_URL not set")?,
-            leave_database_url: env::var("LEAVE_DATABASE_URL")
-                .ok()
-                .ok_or("LEAVE_DATABASE_URL not set")?,
             redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),
             api_access_key: env::var("API_ACCESS_KEY")
                 .ok()

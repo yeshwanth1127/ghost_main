@@ -19,8 +19,8 @@ export const useWindowResize = () => {
         return;
       }
 
-      // Use a taller collapsed height so the main bar is fully visible without scroll
-      const newHeight = expanded ? 600 : 110;
+      // Keep window large enough to show full UI
+      const newHeight = expanded ? 800 : 800;
 
       await invoke("set_window_height", {
         window,

@@ -222,10 +222,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
 
     // Load customizable state
-    const customizableState = getCustomizableState();
+    let customizableState = getCustomizableState();
+
+    // Ensure cursor is visible by default for existing users
+    if (customizableState.cursor?.type === "invisible") {
+      customizableState = {
+        ...customizableState,
+        cursor: { type: "default" },
+      };
+      setCustomizableState(customizableState);
+    }
+
     setCustomizable(customizableState);
 
-    updateCursor(customizableState.cursor.type || "invisible");
+    updateCursor(customizableState.cursor.type || "default");
 
     const stored = safeLocalStorage.getItem(STORAGE_KEYS.CUSTOMIZABLE);
     if (!stored) {
@@ -235,10 +245,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       // check if we need to update the schema
       try {
         const parsed = JSON.parse(stored);
+        let needsUpdate = false;
         if (!parsed.autostart) {
-          // save the merged state with new autostart property
+          needsUpdate = true;
+        }
+        if (!parsed.mode) {
+          needsUpdate = true;
+        }
+        if (needsUpdate) {
+          // save the merged state with new properties
           setCustomizableState(customizableState);
-          updateCursor(customizableState.cursor.type || "invisible");
+          updateCursor(customizableState.cursor.type || "default");
         }
       } catch (error) {
         console.debug("Failed to check customizable state schema:", error);
@@ -256,11 +273,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const updateCursor = (type: CursorType | undefined) => {
     try {
-      const safeType = type || "invisible";
+      const safeType = type || "default";
       const cursorValue = type === "invisible" ? "none" : safeType;
       document.documentElement.style.setProperty("--cursor-type", cursorValue);
     } catch (error) {
-      document.documentElement.style.setProperty("--cursor-type", "none");
+      document.documentElement.style.setProperty("--cursor-type", "default");
     }
   };
 

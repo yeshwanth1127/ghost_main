@@ -1,6 +1,7 @@
 import { STORAGE_KEYS } from "@/config";
 
 export type CursorType = "invisible" | "default" | "auto";
+export type AppMode = "chat" | "agent" | null;
 
 export interface CustomizableState {
   appIcon: {
@@ -18,6 +19,9 @@ export interface CustomizableState {
   cursor: {
     type: CursorType;
   };
+  mode: {
+    type: AppMode;
+  };
 }
 
 export const DEFAULT_CUSTOMIZABLE_STATE: CustomizableState = {
@@ -25,7 +29,8 @@ export const DEFAULT_CUSTOMIZABLE_STATE: CustomizableState = {
   alwaysOnTop: { isEnabled: false },
   titles: { isEnabled: true },
   autostart: { isEnabled: true },
-  cursor: { type: "invisible" },
+  cursor: { type: "default" },
+  mode: { type: null },
 };
 
 /**
@@ -47,6 +52,7 @@ export const getCustomizableState = (): CustomizableState => {
       titles: parsedState.titles || DEFAULT_CUSTOMIZABLE_STATE.titles,
       autostart: parsedState.autostart || DEFAULT_CUSTOMIZABLE_STATE.autostart,
       cursor: parsedState.cursor || DEFAULT_CUSTOMIZABLE_STATE.cursor,
+      mode: parsedState.mode || DEFAULT_CUSTOMIZABLE_STATE.mode,
     };
   } catch (error) {
     console.error("Failed to get customizable state:", error);
@@ -115,6 +121,16 @@ export const updateCursorType = (type: CursorType): CustomizableState => {
 export const updateAutostart = (isEnabled: boolean): CustomizableState => {
   const currentState = getCustomizableState();
   const newState = { ...currentState, autostart: { isEnabled } };
+  setCustomizableState(newState);
+  return newState;
+};
+
+/**
+ * Update app mode
+ */
+export const updateAppMode = (mode: AppMode): CustomizableState => {
+  const currentState = getCustomizableState();
+  const newState = { ...currentState, mode: { type: mode } };
   setCustomizableState(newState);
   return newState;
 };

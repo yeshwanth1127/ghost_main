@@ -15,3 +15,5 @@ export * from "./history";
 export * from "./speech/audio-visualizer";
 export * from "./speech/StatusIndicator";
 export * from "./assistant";
+export * from "./mode";
+export * from "./agent";

@@ -34,6 +34,7 @@ export const Input = ({
   isHidden,
   keepEngaged,
   setKeepEngaged,
+  rawStreamLines,
 }: UseCompletionReturn & { isHidden: boolean }) => {
   return (
     <div className="relative flex-1">
@@ -89,8 +90,8 @@ export const Input = ({
         {/* Response Panel */}
         <PopoverContent
           align="center"
-          side="bottom"
-          className="w-[min(900px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] p-0 pt-2 border shadow-lg overflow-hidden"
+          side="top"
+          className="w-[min(900px,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[calc(100vh-6rem)] min-h-[240px] p-0 pt-2 border shadow-lg overflow-hidden"
           sideOffset={12}
           collisionPadding={8}
         >
@@ -101,6 +102,9 @@ export const Input = ({
               </h3>
               <div className="text-xs text-muted-foreground/70">
                 (Use arrow keys to scroll)
+              </div>
+              <div className="text-xs text-muted-foreground/70">
+                {`len=${response.length}`}
               </div>
             </div>
             <div className="flex items-center gap-2 select-none">
@@ -154,7 +158,10 @@ export const Input = ({
             </div>
           </div>
 
-          <ScrollArea ref={scrollAreaRef} className="max-h-[calc(100vh-12rem)]">
+          <ScrollArea
+            ref={scrollAreaRef}
+            className="h-[min(520px,calc(100vh-14rem))] max-h-[calc(100vh-14rem)]"
+          >
             <div className="p-4">
               {error && (
                 <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-sm text-destructive">
@@ -168,6 +175,17 @@ export const Input = ({
                 </div>
               )}
               {response && <Markdown>{response}</Markdown>}
+
+              {rawStreamLines.length > 0 && (
+                <div className="mt-4 rounded-md border border-border/60 bg-muted/30 p-3">
+                  <div className="text-xs font-semibold text-muted-foreground mb-2">
+                    Raw stream (debug)
+                  </div>
+                  <pre className="text-xs whitespace-pre-wrap break-words text-muted-foreground">
+                    {rawStreamLines.join("\n")}
+                  </pre>
+                </div>
+              )}
 
               {/* Conversation History - Separate scroll, no auto-scroll */}
               {keepEngaged && conversationHistory.length > 1 && (

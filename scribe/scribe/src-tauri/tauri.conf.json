@@ -14,12 +14,12 @@
     "windows": [
       {
         "title": "Ghost - AI Assistant",
-        "width": 700,
-        "height": 160,
+        "width": 1200,
+        "height": 800,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": false,
-        "resizable": false,
+        "resizable": true,
         "visibleOnAllWorkspaces": true,
         "skipTaskbar": true,
         "visible": true,

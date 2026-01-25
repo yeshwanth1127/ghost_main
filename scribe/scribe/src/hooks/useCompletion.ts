@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useWindowResize } from "./useWindow";
 import { useGlobalShortcuts } from "@/hooks";
-import { MAX_FILES } from "@/config";
+import { DEFAULT_SYSTEM_PROMPT, MAX_FILES } from "@/config";
 import { useApp } from "@/contexts";
 import {
   fetchAIResponse,
@@ -77,6 +77,13 @@ export const useCompletion = () => {
   } = useApp();
   const globalShortcuts = useGlobalShortcuts();
   const actionAssistant = useActionAssistant();
+  const effectiveSystemPrompt =
+    systemPrompt &&
+    systemPrompt.includes(
+      "You are an autonomous agent making decisions about what action to take next."
+    )
+      ? DEFAULT_SYSTEM_PROMPT
+      : systemPrompt;
 
   const [state, setState] = useState<CompletionState>({
     input: "",
@@ -93,6 +100,8 @@ export const useCompletion = () => {
   const [isFilesPopoverOpen, setIsFilesPopoverOpen] = useState(false);
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
+  const [responseOpen, setResponseOpen] = useState(false);
+  const [rawStreamLines, setRawStreamLines] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isProcessingScreenshotRef = useRef(false);
   const screenshotConfigRef = useRef(screenshotConfiguration);
@@ -213,6 +222,8 @@ export const useCompletion = () => {
       if (!input.trim()) {
         return;
       }
+      setRawStreamLines([]);
+      setResponseOpen(true);
 
       if (speechText && !inputOverride) {
         setState((prev) => ({
@@ -329,16 +340,26 @@ export const useCompletion = () => {
         }));
 
         try {
+          console.log("[useCompletion] submit", {
+            inputLength: input.length,
+            attachments: attachments.length,
+            useScribeAPI,
+            provider: useScribeAPI ? "scribe" : provider?.id,
+          });
           // Use the fetchAIResponse function with signal
           for await (const chunk of fetchAIResponse({
             provider: useScribeAPI ? undefined : provider,
             selectedProvider: selectedAIProvider,
-            systemPrompt: systemPrompt || undefined,
+            systemPrompt: effectiveSystemPrompt || undefined,
             history: messageHistory,
             userMessage: input,
             imagesBase64,
             signal,
           })) {
+            console.log("[useCompletion] chunk", {
+              length: chunk.length,
+              preview: chunk.slice(0, 80),
+            });
             // Only update if this is still the current request
             if (currentRequestIdRef.current !== requestId) {
               return; // Request was superseded, stop processing
@@ -358,10 +379,13 @@ export const useCompletion = () => {
         } catch (e: any) {
           // Only show error if this is still the current request and not aborted
           if (currentRequestIdRef.current === requestId && !signal.aborted) {
+            console.error("[useCompletion] Error in fetchAIResponse:", e);
+            const errorMessage = e?.message || e?.toString() || "An error occurred";
             setState((prev) => ({
               ...prev,
               isLoading: false,
-              error: e.message || "An error occurred",
+              error: errorMessage,
+              response: "", // Clear response on error
             }));
           }
           return;
@@ -373,6 +397,9 @@ export const useCompletion = () => {
         }
 
         setState((prev) => ({ ...prev, isLoading: false }));
+        console.log("[useCompletion] completed", {
+          fullResponseLength: fullResponse.length,
+        });
 
         // Focus input after AI response is complete
         setTimeout(() => {
@@ -416,7 +443,7 @@ export const useCompletion = () => {
       state.attachedFiles,
       selectedAIProvider,
       allAiProviders,
-      systemPrompt,
+      effectiveSystemPrompt,
       state.conversationHistory,
       submitLeaveApplicationToApi,
     ]
@@ -428,6 +455,8 @@ export const useCompletion = () => {
       abortControllerRef.current = null;
     }
     currentRequestIdRef.current = null;
+    setResponseOpen(false);
+    setRawStreamLines([]);
     setState((prev) => ({ ...prev, isLoading: false }));
   }, []);
 
@@ -437,6 +466,8 @@ export const useCompletion = () => {
       return;
     }
     cancel();
+    setResponseOpen(false);
+    setRawStreamLines([]);
     setState((prev) => ({
       ...prev,
       input: "",
@@ -784,7 +815,7 @@ export const useCompletion = () => {
             for await (const chunk of fetchAIResponse({
               provider: useScribeAPI ? undefined : provider,
               selectedProvider: selectedAIProvider,
-              systemPrompt: systemPrompt || undefined,
+              systemPrompt: effectiveSystemPrompt || undefined,
               history: messageHistory,
               userMessage: prompt,
               imagesBase64: [base64],
@@ -828,9 +859,12 @@ export const useCompletion = () => {
           } catch (e: any) {
             // Only show error if this is still the current request and not aborted
             if (currentRequestIdRef.current === requestId && !signal.aborted) {
+              console.error("[useCompletion] Error in screenshot AI response:", e);
+              const errorMessage = e?.message || e?.toString() || "An error occurred";
               setState((prev) => ({
                 ...prev,
-                error: e.message || "An error occurred",
+                error: errorMessage,
+                response: "", // Clear response on error
               }));
             }
           } finally {
@@ -871,7 +905,7 @@ export const useCompletion = () => {
       state.conversationHistory,
       selectedAIProvider,
       allAiProviders,
-      systemPrompt,
+      effectiveSystemPrompt,
       saveCurrentConversation,
       inputRef,
     ]
@@ -930,7 +964,8 @@ export const useCompletion = () => {
     state.isLoading ||
     state.response !== "" ||
     state.error !== null ||
-    keepEngaged;
+    keepEngaged ||
+    responseOpen;
 
   useEffect(() => {
     resizeWindow(
@@ -1006,6 +1041,27 @@ export const useCompletion = () => {
     window.addEventListener("keydown", handleToggleShortcut);
     return () => window.removeEventListener("keydown", handleToggleShortcut);
   }, [isPopoverOpen]);
+
+  // Debug: capture raw SSE lines from backend
+  useEffect(() => {
+    let unlisten: any;
+    const setupListener = async () => {
+      unlisten = await listen("chat_stream_raw_line", (event: any) => {
+        const line = String(event?.payload ?? "").trim();
+        if (!line) return;
+        setRawStreamLines((prev) => {
+          const next = [...prev, line];
+          return next.length > 20 ? next.slice(-20) : next;
+        });
+      });
+    };
+    setupListener();
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   const captureScreenshot = useCallback(async () => {
     if (!handleScreenshotSubmit) return;
@@ -1199,5 +1255,6 @@ export const useCompletion = () => {
     isScreenshotLoading,
     keepEngaged,
     setKeepEngaged,
+    rawStreamLines,
   };
 };

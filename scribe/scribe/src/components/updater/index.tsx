@@ -52,6 +52,13 @@ export const Updater = () => {
     try {
       setUpdateState("checking");
 
+      // Check if updater plugin is available
+      if (typeof check === 'undefined') {
+        console.warn("Updater plugin not available");
+        setUpdateState("error");
+        return;
+      }
+
       const foundUpdate = await check();
       if (foundUpdate) {
         setUpdate(foundUpdate);
@@ -59,7 +66,15 @@ export const Updater = () => {
       } else {
         setUpdateState("uptodate");
       }
-    } catch (err) {
+    } catch (err: any) {
+      // Silently handle permission errors or missing plugin
+      const errorMsg = err?.message || String(err);
+      if (errorMsg.includes('not allowed') || errorMsg.includes('permission') || errorMsg.includes('plugin not found')) {
+        console.debug("Updater not available or not configured:", errorMsg);
+        setUpdateState("error");
+        setIsPopoverOpen(false);
+        return;
+      }
       console.error("Failed to check for updates:", err);
       setUpdateState("error");
       setIsPopoverOpen(false);

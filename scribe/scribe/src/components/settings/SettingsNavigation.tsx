@@ -7,6 +7,7 @@ const SETTINGS_SECTIONS = [
   { id: "screenshot", label: "Screenshot config" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "cursor", label: "Cursor" },
+  { id: "mode", label: "App mode" },
   { id: "audio", label: "Audio devices" },
   { id: "autostart", label: "App startup" },
   { id: "app-icon", label: "App icon" },

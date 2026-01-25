@@ -20,7 +20,6 @@ use tracing_subscriber;
 
 use config::Config;
 use db::create_pool;
-use services::leave::LeaveService;
 
 fn load_env_file(path: &str) {
     match std::fs::read_to_string(path) {
@@ -68,7 +67,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create database connection pool
     let pool = create_pool(&config.database_url).await?;
-    let leave_pool = create_pool(&config.leave_database_url).await?;
 
     // Run migrations
     sqlx::migrate!("./migrations")
@@ -76,13 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to run migrations");
 
-    ensure_leave_schema(&leave_pool)
-        .await
-        .expect("Failed to ensure leave applications schema");
-
     // Build the application
-    let leave_service = LeaveService::new(leave_pool.clone());
-    let app = create_router(pool.clone(), leave_service).await;
+    let app = create_router(pool.clone()).await;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("🚀🚀🚀 Ghost API server listening on {} 🚀🚀🚀", addr);
@@ -98,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn create_router(pool: PgPool, leave_service: LeaveService) -> Router {
+async fn create_router(pool: PgPool) -> Router {
     tracing::info!("🚀 Setting up routes...");
     
     // CORS configuration
@@ -117,7 +110,6 @@ async fn create_router(pool: PgPool, leave_service: LeaveService) -> Router {
         license_service: license_service.clone(),
         openrouter_service: openrouter_service.clone(),
         whisper_service: whisper_service.clone(),
-        leave_service: leave_service.clone(),
     };
 
     Router::new()
@@ -136,10 +128,6 @@ async fn create_router(pool: PgPool, leave_service: LeaveService) -> Router {
         .route(
             "/api/v1/desktop-updates/tauri",
             get(routes::updates::tauri_manifest),
-        )
-        .route(
-            "/api/v1/leave-applications",
-            post(routes::leave::create_leave_application),
         )
         .layer(from_fn(log_request))
         .layer(cors)
@@ -160,25 +148,4 @@ async fn log_request(request: Request, next: Next) -> Response {
     tracing::info!("📤 RESPONSE STATUS: {}", response.status());
     
     response
-}
-
-async fn ensure_leave_schema(pool: &PgPool) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS leave_applications (
-            id UUID PRIMARY KEY,
-            name TEXT NOT NULL,
-            usn TEXT NOT NULL,
-            department TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            summary TEXT NOT NULL,
-            attachments JSONB NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-        "#,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
 }

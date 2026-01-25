@@ -52,18 +52,36 @@ async function* fetchScribeAIResponse(params: {
       imageBase64 = imagesBase64.length === 1 ? imagesBase64[0] : imagesBase64;
     }
 
-    // Set up streaming event listener
+    // Set up streaming event listener BEFORE invoking
     let streamComplete = false;
     const streamChunks: string[] = [];
 
+    console.log("[Scribe API] Setting up event listeners...");
     const unlisten = await listen("chat_stream_chunk", (event) => {
-      const chunk = event.payload as string;
-      streamChunks.push(chunk);
+      const chunk = String(event.payload ?? "");
+      console.log("[Scribe API] Received chunk:", chunk.substring(0, 50) + "...");
+      if (chunk) {
+        streamChunks.push(chunk);
+      }
     });
 
-    const unlistenComplete = await listen("chat_stream_complete", () => {
+    const unlistenComplete = await listen("chat_stream_complete", (event) => {
+      const fullResponse = String(event.payload ?? "");
+      console.log(
+        "[Scribe API] Stream complete event received. Total response length:",
+        fullResponse.length
+      );
+      // If we have a full response but no chunks were received, add it as a single chunk
+      if (fullResponse && streamChunks.length === 0) {
+        console.log("[Scribe API] No chunks received, using full response as single chunk");
+        streamChunks.push(fullResponse);
+      }
       streamComplete = true;
     });
+
+    let invokeResolved = false;
+    let invokeError: unknown = null;
+    let invokeResult: string | null = null;
 
     try {
       // Check if aborted before starting invoke
@@ -73,61 +91,97 @@ async function* fetchScribeAIResponse(params: {
         return;
       }
 
-      // Start the streaming request
-      await invoke("chat_stream", {
+      // Start the streaming request (don't await; let events flow)
+      console.log("[Scribe API] Starting chat stream request...");
+      const invokePromise = invoke<string>("chat_stream", {
         userMessage,
         systemPrompt,
         imageBase64,
         history: historyString,
-      });
+      })
+        .then((result) => {
+          invokeResolved = true;
+          if (typeof result === "string") {
+            invokeResult = result;
+          }
+        })
+        .catch((error) => {
+          invokeResolved = true;
+          invokeError = error;
+        });
 
-      // Yield chunks as they come in
+      // Yield chunks as they come in while invoke is running
       let lastIndex = 0;
-      while (!streamComplete) {
-        // Check if aborted during streaming
+      let timeoutCount = 0;
+      let idleTicks = 0;
+      const MAX_TIMEOUTS = 300; // 30 seconds max wait (100ms * 300)
+
+      console.log("[Scribe API] Starting to poll for chunks...");
+      while (timeoutCount < MAX_TIMEOUTS) {
         if (signal?.aborted) {
+          console.log("[Scribe API] Request aborted");
           unlisten();
           unlistenComplete();
           return;
         }
 
-        // Wait a bit for chunks to accumulate
         await new Promise((resolve) =>
           setTimeout(resolve, CHUNK_POLL_INTERVAL_MS)
         );
+        timeoutCount++;
 
-        // Check again after timeout
         if (signal?.aborted) {
+          console.log("[Scribe API] Request aborted after timeout");
           unlisten();
           unlistenComplete();
           return;
         }
 
-        // Yield any new chunks
+        if (streamChunks.length > lastIndex) {
+          console.log(`[Scribe API] Yielding ${streamChunks.length - lastIndex} new chunks`);
+        }
         for (let i = lastIndex; i < streamChunks.length; i++) {
           yield streamChunks[i];
         }
+        if (streamChunks.length > lastIndex) {
+          idleTicks = 0;
+        } else {
+          idleTicks += 1;
+        }
         lastIndex = streamChunks.length;
+
+        if (invokeResolved && streamComplete && idleTicks >= 5) {
+          break;
+        }
       }
 
-      // Final abort check before yielding remaining chunks
-      if (signal?.aborted) {
-        unlisten();
-        unlistenComplete();
-        return;
+      if (timeoutCount >= MAX_TIMEOUTS) {
+        console.warn("[Scribe API] Timeout waiting for stream completion");
       }
 
-      // Yield any remaining chunks
+      if (invokeError && streamChunks.length === 0) {
+        throw invokeError;
+      }
+
+      if (invokeResolved && streamChunks.length === 0 && invokeResult && invokeResult.length > 0) {
+        console.log("[Scribe API] Using invoke result as response");
+        yield invokeResult;
+      }
+
       for (let i = lastIndex; i < streamChunks.length; i++) {
         yield streamChunks[i];
       }
+
+      await invokePromise;
     } finally {
       unlisten();
       unlistenComplete();
     }
   } catch (error) {
+    console.error("[Scribe API] Error in fetchScribeAIResponse:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    yield `Scribe API Error: ${errorMessage}`;
+    // Don't yield error as content - throw it so the UI can handle it
+    throw new Error(`Scribe API Error: ${errorMessage}`);
   }
 }
 

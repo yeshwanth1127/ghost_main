@@ -1,7 +1,7 @@
 use tauri::{App, Manager, WebviewWindow, Size, LogicalSize};
 
 // The offset from the top of the screen to the window
-const TOP_OFFSET: i32 = 196;
+const TOP_OFFSET: i32 = 0;
 
 /// Sets up the main window with custom positioning
 pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
@@ -15,8 +15,8 @@ pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
         })
         .ok_or("No window found")?;
 
-    // Ensure an initial height that fits larger UI before React mounts
-    let _ = window.set_size(Size::Logical(LogicalSize::new(700.0, 200.0)));
+    // Ensure an initial size that fits the full UI before React mounts
+    let _ = window.set_size(Size::Logical(LogicalSize::new(1200.0, 800.0)));
     position_window_top_center(&window, TOP_OFFSET)?;
     
     // Set window as non-focusable on Windows
@@ -75,7 +75,19 @@ pub fn set_window_height(window: tauri::WebviewWindow, height: u32) -> Result<()
     use tauri::{LogicalSize, Size};
 
     // Simply set the window size with fixed width and new height
-    let new_size = LogicalSize::new(700.0, height as f64);
+    let new_size = LogicalSize::new(1200.0, height as f64);
+    window
+        .set_size(Size::Logical(new_size))
+        .map_err(|e| format!("Failed to resize window: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_window_size(window: tauri::WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+    use tauri::{LogicalSize, Size};
+
+    let new_size = LogicalSize::new(width as f64, height as f64);
     window
         .set_size(Size::Logical(new_size))
         .map_err(|e| format!("Failed to resize window: {}", e))?;

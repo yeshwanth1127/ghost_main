@@ -20,7 +20,6 @@
         "STRIPE_API_KEY": "sk_test_placeholder",
         "STRIPE_WEBHOOK_SECRET": "whsec_placeholder",
         "SENTRY_DSN": "",
-        "LEAVE_DATABASE_URL": "postgres://postgres:ExoraSolutions2004@localhost:5432/leave_details"
       },
       "error_file": "/root/ghost/scribe/scribe/scribe-api/logs/ghost-api-error.log",
       "out_file": "/root/ghost/scribe/scribe/scribe-api/logs/ghost-api-out.log",

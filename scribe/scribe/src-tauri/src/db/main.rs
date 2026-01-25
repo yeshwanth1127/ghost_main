@@ -24,6 +24,13 @@ pub fn migrations() -> Vec<Migration> {
             sql: include_str!("migrations/assistant.sql"),
             kind: MigrationKind::Up,
         },
+        // Migration 4: Create agent runs and run_events tables
+        Migration {
+            version: 4,
+            description: "create_agent_runs_tables",
+            sql: include_str!("migrations/agent-runs.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

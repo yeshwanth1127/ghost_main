@@ -90,6 +90,8 @@ export interface UseCompletionReturn {
   keepEngaged: boolean;
   /** Function to toggle keep engaged mode */
   setKeepEngaged: Dispatch<SetStateAction<boolean>>;
+  /** Recent raw SSE lines for debugging streaming issues */
+  rawStreamLines: string[];
 
   // Screenshot functionality
   /** Current screenshot configuration settings */

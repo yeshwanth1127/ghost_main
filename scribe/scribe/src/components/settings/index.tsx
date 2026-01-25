@@ -24,6 +24,7 @@ import Theme from "./Theme";
 import { SettingsNavigation } from "./SettingsNavigation";
 import { CursorSelection } from "./Cursor";
 import { ApplyForLeave } from "./ApplyForLeave";
+import { ModeToggle } from "./ModeToggle";
 
 export const Settings = () => {
   const settings = useSettings();
@@ -48,11 +49,12 @@ export const Settings = () => {
       <PopoverContent
         align="end"
         side="bottom"
-        className="select-none w-screen p-0 border overflow-hidden border-input/50"
+        className="select-none w-screen p-0 border border-input/50 rounded-lg overflow-hidden"
         sideOffset={8}
       >
-        <ScrollArea className="h-[calc(100vh-7.2rem)]">
-          <div className="p-6 space-y-6">
+        <ScrollArea className="h-[calc(100vh-9rem)]">
+          <div className="flex min-h-full">
+            <div className="p-6 space-y-6 w-full flex flex-col justify-center">
             {/* Settings Navigation */}
             <SettingsNavigation />
 
@@ -77,6 +79,9 @@ export const Settings = () => {
             {/* Cursor Selection */}
             <CursorSelection />
 
+            {/* Mode Toggle */}
+            <ModeToggle />
+
             {/* Keyboard Shortcuts */}
             <ShortcutManager />
 
@@ -100,12 +105,14 @@ export const Settings = () => {
 
             {/* Apply for Leave */}
             <ApplyForLeave />
+            </div>
           </div>
 
           {/* Footer attribution removed as requested */}
         </ScrollArea>
 
-        <div className="border-t border-input/50">
+        {/* Footer always visible at the bottom */}
+        <div className="border-t border-input/50 px-6 py-4 bg-background">
           <Disclaimer />
         </div>
       </PopoverContent>

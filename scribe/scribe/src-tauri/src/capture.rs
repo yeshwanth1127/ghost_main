@@ -42,7 +42,7 @@ pub async fn start_screen_capture(app: tauri::AppHandle) -> Result<(), String> {
 
     // Determine logical size/position for the overlay window using Tauri monitor info
     // This avoids clipping on Windows when display scaling > 100%.
-    let (logical_w, logical_h, logical_x, logical_y) = {
+    let (_logical_w, _logical_h, _logical_x, _logical_y) = {
         // Fallback to physical values if monitor info isn't available
         let mut lw = primary_monitor.width() as f64;
         let mut lh = primary_monitor.height() as f64;

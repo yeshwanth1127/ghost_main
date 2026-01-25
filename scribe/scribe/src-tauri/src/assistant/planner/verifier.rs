@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 /// Verify and validate an action plan
 pub fn verify_action_plan(plan: &ActionPlan, user_home: &PathBuf) -> Result<VerifiedPlan, String> {
-    let mut notes = Vec::new();
+    let notes = Vec::new();
     let mut risk_score = plan.schema.risk_score;
 
     // Validate each action
