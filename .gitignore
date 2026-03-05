@@ -1,0 +1,10 @@
+# Rust / Cargo
+**/target/
+*.pdb
+
+# Node
+node_modules/
+
+# Env
+.env
+.env.local

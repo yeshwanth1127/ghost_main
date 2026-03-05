@@ -5,6 +5,9 @@
 
 const FACT_TRIGGER_PATTERNS = [
   /my name is/i,
+  /I'm\s+[A-Za-z]+/i,       // "I'm Alex"
+  /I am\s+[A-Z][a-z]+/i,    // "I am Alex" (capitalized name, not "I am working")
+  /call me\s+/i,            // "call me Alex"
   /I am working on/i,
   /I am building/i,
   /my project/i,
