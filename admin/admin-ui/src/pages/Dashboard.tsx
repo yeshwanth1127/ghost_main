@@ -43,7 +43,7 @@ function formatDateTime(value: unknown): string {
 
 type TableColumn<T> = { key: keyof T; label: string; format?: (v: unknown) => string };
 
-function Table<T extends Record<string, unknown>>({
+function Table<T extends object>({
   columns,
   data,
   rowKey,
@@ -67,7 +67,7 @@ function Table<T extends Record<string, unknown>>({
         {data.map((row) => (
           <tr key={rowKey(row)} style={{ borderBottom: "1px solid #1e293b" }}>
             {columns.map((c) => {
-              const raw = row[c.key];
+              const raw = (row as Record<string, unknown>)[c.key as string];
               const display = c.format ? c.format(raw) : String(raw ?? "");
               return (
                 <td key={String(c.key)} style={{ padding: "0.75rem", fontSize: "0.875rem" }}>

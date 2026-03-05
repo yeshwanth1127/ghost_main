@@ -1,6 +1,7 @@
 import { getDatabase } from "./config";
 import { ChatConversation } from "@/types";
 import { safeLocalStorage, CONVERSATION_TITLE_WORD_LIMIT } from "@/lib";
+import { countTokens } from "@/lib/utils/token-counter";
 
 // Legacy localStorage key for migration purposes
 const LEGACY_CHAT_HISTORY_KEY = "chat_history";
@@ -27,6 +28,7 @@ interface DbMessage {
   content: string;
   timestamp: number;
   attached_files: string | null; // JSON string
+  token_count?: number | null;
 }
 
 /**
@@ -124,8 +126,11 @@ export async function createConversation(
         ? JSON.stringify(message.attachedFiles)
         : null;
 
+      const tokenCount =
+        message.token_count ?? countTokens(message.content || "");
+
       await db.execute(
-        "INSERT INTO messages (id, conversation_id, role, content, timestamp, attached_files) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO messages (id, conversation_id, role, content, timestamp, attached_files, token_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
         [
           message.id,
           conversation.id,
@@ -133,6 +138,7 @@ export async function createConversation(
           message.content,
           message.timestamp,
           attachedFilesJson,
+          tokenCount,
         ]
       );
     }
@@ -196,6 +202,7 @@ export async function getAllConversations(): Promise<ChatConversation[]> {
           content: msg.content,
           timestamp: msg.timestamp,
           attachedFiles: safeJsonParse(msg.attached_files, undefined),
+          token_count: msg.token_count ?? undefined,
         })) || [],
     }));
   } catch (error) {
@@ -249,6 +256,7 @@ export async function getConversationById(
         content: msg.content,
         timestamp: msg.timestamp,
         attachedFiles: safeJsonParse(msg.attached_files, undefined),
+        token_count: msg.token_count ?? undefined,
       })),
     };
   } catch (error) {
@@ -309,8 +317,11 @@ export async function updateConversation(
           ? JSON.stringify(message.attachedFiles)
           : null;
 
+        const tokenCount =
+          message.token_count ?? countTokens(message.content || "");
+
         await db.execute(
-          "INSERT INTO messages (id, conversation_id, role, content, timestamp, attached_files) VALUES (?, ?, ?, ?, ?, ?)",
+          "INSERT INTO messages (id, conversation_id, role, content, timestamp, attached_files, token_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
           [
             message.id,
             conversation.id,
@@ -318,6 +329,7 @@ export async function updateConversation(
             message.content,
             message.timestamp,
             attachedFilesJson,
+            tokenCount,
           ]
         );
       }
@@ -416,6 +428,41 @@ export async function deleteAllConversations(): Promise<void> {
 }
 
 /**
+ * Get conversation summary (Layer 2).
+ */
+export async function getConversationSummary(
+  conversationId: string
+): Promise<string | null> {
+  if (!conversationId) return null;
+  const db = await getDatabase();
+  try {
+    const rows = await db.select<{ summary_text: string }[]>(
+      "SELECT summary_text FROM conversation_summaries WHERE conversation_id = ?",
+      [conversationId]
+    );
+    return rows.length > 0 ? rows[0].summary_text : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set conversation summary (Layer 2).
+ */
+export async function setConversationSummary(
+  conversationId: string,
+  summaryText: string
+): Promise<void> {
+  if (!conversationId || !summaryText) return;
+  const db = await getDatabase();
+  const now = Date.now();
+  await db.execute(
+    "INSERT INTO conversation_summaries (conversation_id, summary_text, last_updated_at) VALUES (?, ?, ?) ON CONFLICT(conversation_id) DO UPDATE SET summary_text = excluded.summary_text, last_updated_at = excluded.last_updated_at",
+    [conversationId, summaryText, now]
+  );
+}
+
+/**
  * Semantic memory: get key-value facts for a conversation.
  * Returns empty object if table missing or no facts.
  */
@@ -439,8 +486,11 @@ export async function getFactsForConversation(
   }
 }
 
+const MAX_FACTS_PER_CONVERSATION = 10;
+
 /**
  * Semantic memory: set a fact for a conversation (upsert by key).
+ * Enforces max 10 facts per conversation; deletes oldest when exceeding.
  */
 export async function setFactForConversation(
   conversationId: string,
@@ -450,10 +500,50 @@ export async function setFactForConversation(
   if (!conversationId || !key) return;
   const db = await getDatabase();
   const now = Date.now();
+
+  const existing = await db.select<{ key: string }[]>(
+    "SELECT key FROM conversation_facts WHERE conversation_id = ? AND key = ?",
+    [conversationId, key]
+  );
+
+  if (existing.length === 0) {
+    const countRows = await db.select<{ count: number }[]>(
+      "SELECT COUNT(*) as count FROM conversation_facts WHERE conversation_id = ?",
+      [conversationId]
+    );
+    const count = countRows[0]?.count ?? 0;
+    if (count >= MAX_FACTS_PER_CONVERSATION) {
+      const oldest = await db.select<{ id: number }[]>(
+        "SELECT id FROM conversation_facts WHERE conversation_id = ? ORDER BY created_at ASC LIMIT 1",
+        [conversationId]
+      );
+      if (oldest.length > 0) {
+        await db.execute("DELETE FROM conversation_facts WHERE id = ?", [
+          oldest[0].id,
+        ]);
+      }
+    }
+  }
+
   await db.execute(
     "INSERT INTO conversation_facts (conversation_id, key, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(conversation_id, key) DO UPDATE SET value = excluded.value, created_at = excluded.created_at",
     [conversationId, key, value, now]
   );
+}
+
+/**
+ * Batch set facts for a conversation with limit enforcement.
+ */
+export async function setFactsForConversation(
+  conversationId: string,
+  facts: Record<string, string>
+): Promise<void> {
+  if (!conversationId || typeof facts !== "object") return;
+  for (const [key, value] of Object.entries(facts)) {
+    if (key && typeof value === "string") {
+      await setFactForConversation(conversationId, key, value);
+    }
+  }
 }
 
 /**

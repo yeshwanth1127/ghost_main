@@ -15,6 +15,14 @@ pub struct Claims {
     pub exp: i64,
 }
 
+/// Customer JWT claims (sub = user_id)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CustomerClaims {
+    pub sub: String,
+    pub email: String,
+    pub exp: i64,
+}
+
 pub async fn require_auth(
     State(state): State<AppState>,
     request: Request<axum::body::Body>,

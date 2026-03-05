@@ -45,6 +45,13 @@ pub fn migrations() -> Vec<Migration> {
             sql: include_str!("migrations/conversation-metadata.sql"),
             kind: MigrationKind::Up,
         },
+        // Migration 7: 3-layer conversation memory (token_count, conversation_summaries)
+        Migration {
+            version: 7,
+            description: "conversation_memory",
+            sql: include_str!("migrations/conversation-memory.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

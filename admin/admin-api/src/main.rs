@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber;
 
-use routes::{admin, auth as auth_routes};
+use routes::{admin, auth as auth_routes, payments as payment_routes};
 use state::AppState;
 
 #[tokio::main]
@@ -53,6 +53,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/api/auth/login", post(auth_routes::login))
+        .route("/api/auth/customer-login", post(auth_routes::customer_login))
+        .route("/api/auth/register", post(auth_routes::register))
+        .route("/api/payments/create-subscription", post(payment_routes::create_subscription))
+        .route("/api/payments/verify", post(payment_routes::verify_payment))
+        .route("/api/payments/webhook", post(payment_routes::webhook))
         .nest("/api/stats", stats_routes)
         .layer(cors)
         .with_state(app_state);

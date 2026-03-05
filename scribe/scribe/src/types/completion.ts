@@ -13,6 +13,8 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   attachedFiles?: AttachedFile[];
+  /** Cached token count (computed at save, avoids re-tokenizing) */
+  token_count?: number;
 }
 
 export interface ChatConversation {

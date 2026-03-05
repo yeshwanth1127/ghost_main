@@ -86,6 +86,12 @@ export function stripReasoningFromContent(content: string): string {
     return replyMatch[1].trim();
   }
 
-  // Reasoning detected but no reply yet - hide until we get it
-  return "";
+  // Content has code blocks - likely a code response; don't strip (phrases like
+  // "I'll create..." or "Let me show..." are legitimate intros, not reasoning)
+  if (/```[\s\S]*```/.test(s)) {
+    return content;
+  }
+
+  // Can't confidently extract reply - return original to avoid wiping code/answers
+  return content;
 }

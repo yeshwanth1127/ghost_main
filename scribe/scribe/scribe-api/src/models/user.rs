@@ -13,6 +13,8 @@ pub struct User {
     pub monthly_reset_at: Option<DateTime<Utc>>,
     pub stripe_customer_id: Option<String>,
     pub stripe_subscription_id: Option<String>,
+    #[sqlx(default)]
+    pub is_owner: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -30,6 +32,8 @@ pub struct License {
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub is_owner: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

@@ -17,8 +17,18 @@ import {
   generateRequestId,
   trimHistoryToContextWindow,
   getFactsForConversation,
+  getConversationSummary,
+  setConversationSummary,
+  setFactsForConversation,
   isScreenContentQuery,
+  summarizeConversationSegment,
+  getOldMessagesForSummarization,
+  shouldSummarize,
+  extractFactsFromExchange,
+  shouldExtractFacts,
 } from "@/lib";
+import { countTokens } from "@/lib/utils/token-counter";
+import type { MessageLike } from "@/lib/context-window";
 import { recordUsageFromClient } from "@/lib/usage-api";
 import { CHARS_PER_TOKEN_ESTIMATE } from "@/lib/chat-constants";
 import { invoke } from "@tauri-apps/api/core";
@@ -47,6 +57,7 @@ interface ChatConversation {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  modelUsed?: string | null;
 }
 
 interface CompletionState {
@@ -265,6 +276,81 @@ export const useCompletion = () => {
     [state.currentConversationId, state.conversationHistory]
   );
 
+  const saveCurrentConversation = useCallback(
+    async (
+      userMessage: string,
+      assistantResponse: string,
+      _attachedFiles: AttachedFile[]
+    ) => {
+      if (!userMessage || !assistantResponse) {
+        console.error("Cannot save conversation: missing message content");
+        return;
+      }
+      const conversationId =
+        state.currentConversationId || generateConversationId("chat");
+      const timestamp = Date.now();
+      const userMsg: ChatMessage = {
+        id: generateMessageId("user", timestamp),
+        role: "user",
+        content: userMessage,
+        timestamp,
+      };
+      const assistantMsg: ChatMessage = {
+        id: generateMessageId("assistant", timestamp + MESSAGE_ID_OFFSET),
+        role: "assistant",
+        content: assistantResponse,
+        timestamp: timestamp + MESSAGE_ID_OFFSET,
+      };
+      const newMessages = [...state.conversationHistory, userMsg, assistantMsg];
+      let existingConversation = null;
+      if (state.currentConversationId) {
+        try {
+          existingConversation = await getConversationById(
+            state.currentConversationId
+          );
+        } catch (error) {
+          console.error("Failed to get existing conversation:", error);
+        }
+      }
+      const title =
+        state.conversationHistory.length === 0
+          ? generateConversationTitle(userMessage)
+          : existingConversation?.title ||
+            generateConversationTitle(userMessage);
+      const modelUsed =
+        selectedAIProvider?.provider != null
+          ? `${selectedAIProvider.provider}/${selectedAIProvider?.variables?.model ?? "default"}`
+          : undefined;
+      const conversation: ChatConversation = {
+        id: conversationId,
+        title,
+        messages: newMessages,
+        createdAt: existingConversation?.createdAt || timestamp,
+        updatedAt: timestamp,
+        modelUsed: modelUsed ?? null,
+      };
+      try {
+        await saveConversation(conversation);
+        setState((prev) => ({
+          ...prev,
+          currentConversationId: conversationId,
+          conversationHistory: newMessages,
+        }));
+      } catch (error) {
+        console.error("Failed to save conversation:", error);
+        setState((prev) => ({
+          ...prev,
+          error: "Failed to save conversation. Please try again.",
+        }));
+      }
+    },
+    [
+      state.currentConversationId,
+      state.conversationHistory,
+      selectedAIProvider,
+    ]
+  );
+
   const submit = useCallback(
     async (
       options?:
@@ -384,23 +470,35 @@ export const useCompletion = () => {
         // Save user message immediately so we don't lose the turn on crash/close
         const conversationIdUsed = await saveUserMessageOnly(input);
 
-        // Context window: trim history to message count + token budget
-        const trimmedHistory = trimHistoryToContextWindow(state.conversationHistory);
-        const messageHistory = trimmedHistory.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-
-        // Semantic memory: inject stored facts into system prompt
+        // Load summary and facts (3-layer memory)
+        const summary =
+          conversationIdUsed ? await getConversationSummary(conversationIdUsed) : null;
         const facts =
           conversationIdUsed ? await getFactsForConversation(conversationIdUsed) : {};
-        const factsEntries = Object.entries(facts);
-        const systemPromptWithFacts =
-          factsEntries.length > 0
-            ? (effectiveSystemPrompt || "") +
-              "\n\nStored facts for this conversation: " +
-              factsEntries.map(([k, v]) => `${k}: ${v}`).join("; ")
-            : effectiveSystemPrompt || undefined;
+
+        // Context window: trim history with model-aware budget
+        const modelId = selectedAIProvider?.variables?.model;
+        const trimmedHistory = trimHistoryToContextWindow(
+          state.conversationHistory as unknown as MessageLike[],
+          useScribeAPI ? "gpt-4o-mini" : modelId
+        );
+        const messageHistory = trimmedHistory.map((msg) => ({
+          role: (msg.role || "user") as "user" | "assistant" | "system",
+          content: msg.content || "",
+        }));
+
+        // Build augmented system prompt (summary + facts)
+        let systemPromptWithFacts = effectiveSystemPrompt || "";
+        if (summary) {
+          systemPromptWithFacts += "\n\nConversation summary: " + summary;
+        }
+        if (Object.keys(facts).length > 0) {
+          systemPromptWithFacts +=
+            "\n\nStored facts:\n" +
+            Object.entries(facts)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join("\n");
+        }
 
         // Handle image attachments
         const imagesBase64: string[] = [];
@@ -531,6 +629,71 @@ export const useCompletion = () => {
             attachments
           );
 
+          // Background: fact extraction (fire-and-forget)
+          const turnCount = Math.floor((state.conversationHistory.length + 2) / 2);
+          const totalHistoryTokens = trimmedHistory.reduce(
+            (sum, m) => sum + countTokens(m.content || ""),
+            0
+          );
+          const factsUpdatedRecently = false; // Could check conversation_facts.updated_at
+          if (
+            conversationIdUsed &&
+            shouldExtractFacts(input, turnCount, totalHistoryTokens, factsUpdatedRecently)
+          ) {
+            const last6 = [
+              ...trimmedHistory.map((m) => ({
+                role: (m.role || "user") as "user" | "assistant" | "system",
+                content: m.content || "",
+              })),
+              { role: "user" as const, content: input },
+              { role: "assistant" as const, content: cleanedResponse },
+            ].slice(-6) as { role: "user" | "assistant" | "system"; content: string }[];
+            void extractFactsFromExchange(last6, {
+              provider: useScribeAPI ? undefined : provider ?? undefined,
+              selectedProvider: selectedAIProvider,
+            })
+              .then((extracted) => {
+                if (Object.keys(extracted).length > 0) {
+                  return setFactsForConversation(conversationIdUsed!, extracted);
+                }
+              })
+              .catch((e) => console.warn("[useCompletion] Fact extraction failed:", e));
+          }
+
+          // Background: summarization (fire-and-forget)
+          const fullHistoryWithNewTurn = [
+            ...state.conversationHistory,
+            { role: "user" as const, content: input },
+            { role: "assistant" as const, content: cleanedResponse },
+          ];
+          if (
+            conversationIdUsed &&
+            shouldSummarize(
+              fullHistoryWithNewTurn.map((m) => ({ role: m.role, content: m.content })),
+              totalHistoryTokens
+            )
+          ) {
+            const oldMessages = getOldMessagesForSummarization(
+              fullHistoryWithNewTurn.map((m) => ({ role: m.role, content: m.content }))
+            );
+            if (oldMessages.length > 0) {
+              void summarizeConversationSegment(oldMessages, {
+                provider: useScribeAPI ? undefined : provider ?? undefined,
+                selectedProvider: selectedAIProvider,
+              })
+                .then(async (newSummary) => {
+                  if (newSummary) {
+                    const existing = await getConversationSummary(conversationIdUsed!);
+                    const merged = existing
+                      ? `${existing}\n\n${newSummary}`
+                      : newSummary;
+                    await setConversationSummary(conversationIdUsed!, merged);
+                  }
+                })
+                .catch((e) => console.warn("[useCompletion] Summarization failed:", e));
+            }
+          }
+
           // Record usage for direct providers (Scribe API records its own)
           if (!useScribeAPI && selectedAIProvider?.provider) {
             try {
@@ -602,6 +765,7 @@ export const useCompletion = () => {
       state.conversationHistory,
       submitLeaveApplicationToApi,
       saveUserMessageOnly,
+      saveCurrentConversation,
     ]
   );
 
@@ -668,94 +832,6 @@ export const useCompletion = () => {
       attachedFiles: [],
     }));
   }, []);
-
-  const saveCurrentConversation = useCallback(
-    async (
-      userMessage: string,
-      assistantResponse: string,
-      _attachedFiles: AttachedFile[]
-    ) => {
-      // Validate inputs
-      if (!userMessage || !assistantResponse) {
-        console.error("Cannot save conversation: missing message content");
-        return;
-      }
-
-      const conversationId =
-        state.currentConversationId || generateConversationId("chat");
-      const timestamp = Date.now();
-
-      const userMsg: ChatMessage = {
-        id: generateMessageId("user", timestamp),
-        role: "user",
-        content: userMessage,
-        timestamp,
-      };
-
-      const assistantMsg: ChatMessage = {
-        id: generateMessageId("assistant", timestamp + MESSAGE_ID_OFFSET),
-        role: "assistant",
-        content: assistantResponse,
-        timestamp: timestamp + MESSAGE_ID_OFFSET,
-      };
-
-      const newMessages = [...state.conversationHistory, userMsg, assistantMsg];
-
-      // Get existing conversation if updating
-      let existingConversation = null;
-      if (state.currentConversationId) {
-        try {
-          existingConversation = await getConversationById(
-            state.currentConversationId
-          );
-        } catch (error) {
-          console.error("Failed to get existing conversation:", error);
-        }
-      }
-
-      const title =
-        state.conversationHistory.length === 0
-          ? generateConversationTitle(userMessage)
-          : existingConversation?.title ||
-            generateConversationTitle(userMessage);
-
-      const modelUsed =
-        selectedAIProvider?.provider != null
-          ? `${selectedAIProvider.provider}/${selectedAIProvider?.variables?.model ?? "default"}`
-          : undefined;
-
-      const conversation: ChatConversation = {
-        id: conversationId,
-        title,
-        messages: newMessages,
-        createdAt: existingConversation?.createdAt || timestamp,
-        updatedAt: timestamp,
-        modelUsed: modelUsed ?? null,
-      };
-
-      try {
-        await saveConversation(conversation);
-
-        setState((prev) => ({
-          ...prev,
-          currentConversationId: conversationId,
-          conversationHistory: newMessages,
-        }));
-      } catch (error) {
-        console.error("Failed to save conversation:", error);
-        // Show error to user
-        setState((prev) => ({
-          ...prev,
-          error: "Failed to save conversation. Please try again.",
-        }));
-      }
-    },
-    [
-      state.currentConversationId,
-      state.conversationHistory,
-      selectedAIProvider,
-    ]
-  );
 
   const showCapabilities = useCallback(async () => {
     const conversationId =
@@ -1011,26 +1087,35 @@ export const useCompletion = () => {
               return;
             }
 
-            const trimmedHistory = trimHistoryToContextWindow(
-              state.conversationHistory
-            );
-            const messageHistory = trimmedHistory.map((msg) => ({
-              role: msg.role,
-              content: msg.content,
-            }));
-
             const conversationIdForFacts =
               state.currentConversationId || "";
+            const summary = conversationIdForFacts
+              ? await getConversationSummary(conversationIdForFacts)
+              : null;
             const facts = conversationIdForFacts
               ? await getFactsForConversation(conversationIdForFacts)
               : {};
-            const factsEntries = Object.entries(facts);
-            const systemPromptWithFacts =
-              factsEntries.length > 0
-                ? (effectiveSystemPrompt || "") +
-                  "\n\nStored facts for this conversation: " +
-                  factsEntries.map(([k, v]) => `${k}: ${v}`).join("; ")
-                : effectiveSystemPrompt || undefined;
+            const modelId = selectedAIProvider?.variables?.model;
+            const trimmedHistory = trimHistoryToContextWindow(
+              state.conversationHistory as unknown as MessageLike[],
+              useScribeAPI ? "gpt-4o-mini" : modelId
+            );
+            const messageHistory = trimmedHistory.map((msg) => ({
+              role: (msg.role || "user") as "user" | "assistant" | "system",
+              content: msg.content || "",
+            }));
+
+            let systemPromptWithFacts = effectiveSystemPrompt || "";
+            if (summary) {
+              systemPromptWithFacts += "\n\nConversation summary: " + summary;
+            }
+            if (Object.keys(facts).length > 0) {
+              systemPromptWithFacts +=
+                "\n\nStored facts:\n" +
+                Object.entries(facts)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join("\n");
+            }
 
             let fullResponse = "";
 

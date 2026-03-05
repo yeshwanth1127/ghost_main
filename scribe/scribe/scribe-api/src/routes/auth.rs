@@ -155,21 +155,23 @@ pub async fn validate(
 
     // Check if license is active
     let mut is_active = license.status == "active";
-    
-    // Check if trial has expired
-    if is_active && license.is_trial {
-        if let Some(trial_ends_at) = license.trial_ends_at {
-            if trial_ends_at < Utc::now() {
-                is_active = false;
+
+    // Owner license: never expires, no trial check
+    if !license.is_owner {
+        // Check if trial has expired
+        if is_active && license.is_trial {
+            if let Some(trial_ends_at) = license.trial_ends_at {
+                if trial_ends_at < Utc::now() {
+                    is_active = false;
+                }
             }
         }
-    }
-    
-    // Check if paid license has expired
-    if is_active {
-        if let Some(expires_at) = license.expires_at {
-            if expires_at < Utc::now() {
-                is_active = false;
+        // Check if paid license has expired
+        if is_active {
+            if let Some(expires_at) = license.expires_at {
+                if expires_at < Utc::now() {
+                    is_active = false;
+                }
             }
         }
     }
@@ -190,10 +192,12 @@ pub async fn validate(
     }).into_response()
 }
 
-pub async fn checkout() -> impl IntoResponse {
+pub async fn checkout(State(state): State<AppState>) -> impl IntoResponse {
+    let base = state.config.payment_base_url.trim_end_matches('/');
+    let checkout_url = format!("{}/subscriptions", base);
     Json(serde_json::json!({
         "success": true,
-        "checkout_url": "https://exora.solutions/checkout"
+        "checkout_url": checkout_url
     }))
 }
 

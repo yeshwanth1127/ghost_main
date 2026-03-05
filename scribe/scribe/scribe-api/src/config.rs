@@ -16,6 +16,8 @@ pub struct Config {
     pub ollama_model: String,
     /// Flat plan price in USD (default 10.0; dynamic pricing later)
     pub plan_price_usd: f64,
+    /// Base URL for Ghost Payments (e.g. http://localhost:5174)
+    pub payment_base_url: String,
 }
 
 impl Config {
@@ -47,6 +49,8 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(10.0),
+            payment_base_url: env::var("PAYMENT_BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:5174".to_string()),
         })
     }
 }

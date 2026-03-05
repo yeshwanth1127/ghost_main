@@ -117,6 +117,18 @@ impl UsageService {
         .await?
         .ok_or(UsageError::UserNotFound(user_id))?;
 
+        // Owner: unlimited tokens, always allowed
+        if user.is_owner {
+            return Ok(TokenLimitCheck {
+                allowed: true,
+                tokens_available: i64::MAX,
+                tokens_used: user.tokens_used_this_month.unwrap_or(0),
+                token_limit: i64::MAX,
+                percentage_used: 0.0,
+                warning: None,
+            });
+        }
+
         let tokens_used = user.tokens_used_this_month.unwrap_or(0);
         let token_limit = user.monthly_token_limit.unwrap_or(5000);
         let tokens_available = token_limit - tokens_used;
@@ -326,9 +338,18 @@ impl UsageService {
         .fetch_optional(&self.pool)
         .await?;
 
-        let tokens_used = user.tokens_used_this_month.unwrap_or(0);
-        let token_limit = user.monthly_token_limit.unwrap_or(5000);
-        let percentage_used = (tokens_used as f64 / token_limit as f64) * 100.0;
+        let (tokens_used, token_limit, percentage_used) = if user.is_owner {
+            (
+                user.tokens_used_this_month.unwrap_or(0),
+                i64::MAX,
+                0.0,
+            )
+        } else {
+            let used = user.tokens_used_this_month.unwrap_or(0);
+            let limit = user.monthly_token_limit.unwrap_or(5000);
+            let pct = (used as f64 / limit as f64) * 100.0;
+            (used, limit, pct)
+        };
 
         // Parse model breakdown from JSONB
         let model_breakdown = if let Some(usage) = &monthly_usage {
