@@ -340,3 +340,313 @@ pub async fn create_trial(
         }
     }
 }
+
+// ============================================
+// USER REGISTRATION
+// ============================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct RegisterRequest {
+    pub email: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RegisterResponse {
+    pub user_id: String,
+    pub email: String,
+    pub license_key: String,
+    pub plan: String,
+    pub trial_ends_at: String,
+    pub message: String,
+}
+
+pub async fn register(
+    State(state): State<AppState>,
+    Json(request): Json<RegisterRequest>,
+) -> impl IntoResponse {
+    // Validate email
+    let email = request.email.trim().to_lowercase();
+    if email.is_empty() || !email.contains('@') {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Invalid email address"
+            }))
+        ).into_response();
+    }
+
+    // Check if user already exists
+    if let Ok(Some(_)) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM users WHERE email = $1"
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        return (
+            axum::http::StatusCode::CONFLICT,
+            Json(serde_json::json!({
+                "error": "User with this email already exists"
+            }))
+        ).into_response();
+    }
+
+    let user_id = Uuid::new_v4();
+    let license_key = generate_license_key();
+    let now = Utc::now();
+    let trial_ends_at = now + chrono::Duration::days(14);
+    let monthly_reset_at = now + chrono::Duration::days(30);
+
+    // Create user and license in transaction
+    let mut tx = match state.pool.begin().await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("Failed to start transaction: {}", e);
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Database error"
+                }))
+            ).into_response();
+        }
+    };
+
+    // Create user
+    if let Err(e) = sqlx::query(
+        "INSERT INTO users (id, email, plan, monthly_token_limit, tokens_used_this_month, monthly_reset_at, created_at, updated_at)
+         VALUES ($1, $2, 'free', 5000, 0, $3, $4, $5)"
+    )
+    .bind(&user_id)
+    .bind(&email)
+    .bind(monthly_reset_at)
+    .bind(now)
+    .bind(now)
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!("Failed to create user: {}", e);
+        let _ = tx.rollback().await;
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Failed to create user"
+            }))
+        ).into_response();
+    }
+
+    // Create license with trial
+    if let Err(e) = sqlx::query(
+        "INSERT INTO licenses (id, license_key, user_id, status, tier, max_instances, is_trial, trial_ends_at, created_at)
+         VALUES ($1, $2, $3, 'active', 'free', 1, TRUE, $4, $5)"
+    )
+    .bind(Uuid::new_v4())
+    .bind(&license_key)
+    .bind(&user_id)
+    .bind(trial_ends_at)
+    .bind(now)
+    .execute(&mut *tx)
+    .await
+    {
+        tracing::error!("Failed to create license: {}", e);
+        let _ = tx.rollback().await;
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Failed to create license"
+            }))
+        ).into_response();
+    }
+
+    // Commit transaction
+    if let Err(e) = tx.commit().await {
+        tracing::error!("Failed to commit transaction: {}", e);
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "error": "Database error"
+            }))
+        ).into_response();
+    }
+
+    tracing::info!(
+        "✅ New user registered: {} with license: {}",
+        email,
+        license_key
+    );
+
+    (
+        axum::http::StatusCode::CREATED,
+        Json(RegisterResponse {
+            user_id: user_id.to_string(),
+            email,
+            license_key,
+            plan: "free".to_string(),
+            trial_ends_at: trial_ends_at.to_rfc3339(),
+            message: "User registered successfully with 14-day free trial".to_string(),
+        })
+    ).into_response()
+}
+
+/// Generate a random license key (format: GHOST-XXXXXXXX-XXXXXXXX)
+fn generate_license_key() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let part1: String = (0..8)
+        .map(|_| chars.chars().nth(rng.gen_range(0..chars.len())).unwrap())
+        .collect();
+    let part2: String = (0..8)
+        .map(|_| chars.chars().nth(rng.gen_range(0..chars.len())).unwrap())
+        .collect();
+    format!("GHOST-{}-{}", part1, part2)
+}
+
+// ============================================
+// USER LOGIN
+// ============================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct LoginResponse {
+    pub user_id: String,
+    pub email: String,
+    pub license_key: String,
+    pub plan: String,
+    pub message: String,
+}
+
+pub async fn login(
+    State(state): State<AppState>,
+    Json(request): Json<LoginRequest>,
+) -> impl IntoResponse {
+    let email = request.email.trim().to_lowercase();
+    
+    if email.is_empty() || !email.contains('@') {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Invalid email address"
+            }))
+        ).into_response();
+    }
+
+    // Get user and their license
+    match sqlx::query(
+        "SELECT u.id, u.email, u.plan, l.license_key 
+         FROM users u 
+         LEFT JOIN licenses l ON u.id = l.user_id 
+         WHERE u.email = $1 
+         LIMIT 1"
+    )
+    .bind(&email)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => {
+            let user_id: Uuid = row.get(0);
+            let user_email: String = row.get(1);
+            let plan: String = row.get(2);
+            let license_key: Option<String> = row.get(3);
+
+            if let Some(license_key) = license_key {
+                Json(LoginResponse {
+                    user_id: user_id.to_string(),
+                    email: user_email,
+                    license_key,
+                    plan,
+                    message: "Login successful".to_string(),
+                }).into_response()
+            } else {
+                (
+                    axum::http::StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": "No license found for this user"
+                    }))
+                ).into_response()
+            }
+        }
+        Ok(None) => {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "User not found. Please register first."
+                }))
+            ).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Database error during login: {}", e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Database error"
+                }))
+            ).into_response()
+        }
+    }
+}
+
+// ============================================
+// GET USER ID FROM LICENSE KEY
+// ============================================
+
+#[derive(Debug, serde::Deserialize)]
+pub struct GetUserRequest {
+    pub license_key: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct GetUserResponse {
+    pub user_id: String,
+    pub email: String,
+    pub plan: String,
+}
+
+pub async fn get_user_from_license(
+    State(state): State<AppState>,
+    Json(request): Json<GetUserRequest>,
+) -> impl IntoResponse {
+    match sqlx::query(
+        "SELECT u.id, u.email, u.plan 
+         FROM users u 
+         JOIN licenses l ON u.id = l.user_id 
+         WHERE l.license_key = $1 
+         LIMIT 1"
+    )
+    .bind(&request.license_key)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(row)) => {
+            let user_id: Uuid = row.get(0);
+            let email: String = row.get(1);
+            let plan: String = row.get(2);
+
+            Json(GetUserResponse {
+                user_id: user_id.to_string(),
+                email,
+                plan,
+            }).into_response()
+        }
+        Ok(None) => {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "License not found"
+                }))
+            ).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Database error"
+                }))
+            ).into_response()
+        }
+    }
+}

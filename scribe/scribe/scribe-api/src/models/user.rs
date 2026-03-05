@@ -7,6 +7,12 @@ use uuid::Uuid;
 pub struct User {
     pub id: Uuid,
     pub email: Option<String>,
+    pub plan: Option<String>, // free, starter, pro, power
+    pub monthly_token_limit: Option<i64>,
+    pub tokens_used_this_month: Option<i64>,
+    pub monthly_reset_at: Option<DateTime<Utc>>,
+    pub stripe_customer_id: Option<String>,
+    pub stripe_subscription_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

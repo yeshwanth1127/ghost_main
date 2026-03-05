@@ -6,25 +6,35 @@ import { AppProvider, ThemeProvider } from "./contexts";
 import "./global.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-const currentWindow = getCurrentWindow();
-const windowLabel = currentWindow.label;
+function init() {
+  const root = document.getElementById("root");
+  if (!root) return;
 
-// Render different components based on window label
-if (windowLabel === "capture-overlay") {
-  // Render overlay without providers
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <Overlay />
-    </React.StrictMode>
-  );
-} else {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <ThemeProvider>
-        <AppProvider>
-          <App />
-        </AppProvider>
-      </ThemeProvider>
-    </React.StrictMode>
-  );
+  let windowLabel = "main";
+  try {
+    const currentWindow = getCurrentWindow();
+    windowLabel = currentWindow.label;
+  } catch (e) {
+    console.warn("getCurrentWindow failed, using main:", e);
+  }
+
+  if (windowLabel === "capture-overlay") {
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <Overlay />
+      </React.StrictMode>
+    );
+  } else {
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <ThemeProvider>
+          <AppProvider>
+            <App />
+          </AppProvider>
+        </ThemeProvider>
+      </React.StrictMode>
+    );
+  }
 }
+
+init();

@@ -21,11 +21,11 @@
         "alwaysOnTop": false,
         "resizable": true,
         "visibleOnAllWorkspaces": true,
-        "skipTaskbar": true,
+        "skipTaskbar": false,
         "visible": true,
         "center": false,
         "contentProtected": false,
-        "focus": false,
+        "focus": true,
         "acceptFirstMouse": true,
         "shadow": false
       }

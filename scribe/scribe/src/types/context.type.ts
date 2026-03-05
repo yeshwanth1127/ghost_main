@@ -41,8 +41,8 @@ export type IContextType = {
   toggleTitlesVisibility: (isEnabled: boolean) => void;
   toggleAutostart: (isEnabled: boolean) => Promise<void>;
   loadData: () => void;
-  ScribeApiEnabled: boolean;
-  setScribeApiEnabled: (enabled: boolean) => void;
+  GhostApiEnabled: boolean;
+  setGhostApiEnabled: (enabled: boolean) => void;
   hasActiveLicense: boolean;
   setHasActiveLicense: Dispatch<SetStateAction<boolean>>;
   getActiveLicenseStatus: () => Promise<void>;

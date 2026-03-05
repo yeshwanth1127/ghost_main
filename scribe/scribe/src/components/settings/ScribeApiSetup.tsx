@@ -24,6 +24,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components";
+import { safeLocalStorage } from "@/lib/storage";
+import { STORAGE_KEYS } from "@/config";
 
 interface ActivationResponse {
   activated: boolean;
@@ -56,6 +58,17 @@ const LICENSE_KEY_STORAGE_KEY = "Scribe_license_key";
 const INSTANCE_ID_STORAGE_KEY = "Scribe_instance_id";
 const SELECTED_Scribe_MODEL_STORAGE_KEY = "selected_Scribe_model";
 
+/** Virtual model for "Use Exora AI only" - searchable in model selector */
+const EXORA_AI_OPTION: Model = {
+  id: "__exora__",
+  provider: "Exora AI",
+  name: "Exora AI",
+  model: "ollama",
+  description: "Use local Ollama",
+  modality: "chat",
+  isAvailable: true,
+};
+
 export const ScribeApiSetup = () => {
   const {
     ScribeApiEnabled,
@@ -63,6 +76,7 @@ export const ScribeApiSetup = () => {
     hasActiveLicense,
     setHasActiveLicense,
     getActiveLicenseStatus,
+    selectedAIProvider,
   } = useApp();
 
   const [licenseKey, setLicenseKey] = useState("");
@@ -76,6 +90,8 @@ export const ScribeApiSetup = () => {
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
   const fetchInitiated = useRef(false);
   const commandListRef = useRef<HTMLDivElement>(null);
 
@@ -88,6 +104,51 @@ export const ScribeApiSetup = () => {
     }
   }, []);
 
+  // Use selected provider from context (source of truth)
+  const isOllamaSelected =
+    selectedAIProvider?.provider === "ollama" || selectedAIProvider?.provider === "exora";
+
+  // Don't show "Exora AI is selected" when user has manually chosen another model (e.g. Nemotron)
+  const [hasSelectedOtherModel, setHasSelectedOtherModel] = useState(false);
+  useEffect(() => {
+    if (!isOllamaSelected) {
+      setHasSelectedOtherModel(false);
+      return;
+    }
+    const check = async () => {
+      try {
+        const s = await invoke<{ selected_Scribe_model?: string }>("secure_storage_get");
+        const hasModel = !!(s?.selected_Scribe_model?.trim());
+        setHasSelectedOtherModel(hasModel);
+      } catch {
+        setHasSelectedOtherModel(false);
+      }
+    };
+    check();
+    const interval = setInterval(check, 1500);
+    return () => clearInterval(interval);
+  }, [isOllamaSelected]);
+
+  // Fallback: also check localStorage when context may not be ready (e.g. initial load)
+  useEffect(() => {
+    if (selectedAIProvider?.provider) return; // Context has it, no need to poll
+    const checkProvider = () => {
+      const selectedProviderJson = safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_AI_PROVIDER);
+      if (selectedProviderJson) {
+        try {
+          const p = JSON.parse(selectedProviderJson);
+          const isOllama = p?.provider === "ollama" || p?.provider === "exora";
+          if (models.length === 0 && !isModelsLoading && fetchInitiated.current) {
+            fetchModels();
+          }
+        } catch {}
+      }
+    };
+    const interval = setInterval(checkProvider, 1000);
+    checkProvider();
+    return () => clearInterval(interval);
+  }, [models.length, isModelsLoading, selectedAIProvider?.provider]);
+
   // Scroll to top when search value changes
   useEffect(() => {
     if (commandListRef.current) {
@@ -95,28 +156,12 @@ export const ScribeApiSetup = () => {
     }
   }, [searchValue]);
 
-  const isFreeModel = (model: Model) => {
-    const desc = model?.description || "";
-    // Try to extract numeric prices from the description the backend formats like:
-    // "Pricing: Request $0/1M, Completion $0/1M"
-    const promptMatch = desc.match(/Request\s*\$\s*([0-9]+(?:\.[0-9]+)?)/i);
-    const completionMatch = desc.match(/Completion\s*\$\s*([0-9]+(?:\.[0-9]+)?)/i);
-
-    const promptPrice = promptMatch ? parseFloat(promptMatch[1]) : 0;
-    const completionPrice = completionMatch ? parseFloat(completionMatch[1]) : 0;
-
-    return promptPrice === 0 && completionPrice === 0;
-  };
-
   const fetchModels = async () => {
     setIsModelsLoading(true);
     try {
       const fetchedModels = await invoke<Model[]>("fetch_models");
-      // Show only free OpenRouter models in this list
-      const freeOnly = Array.isArray(fetchedModels)
-        ? fetchedModels.filter(isFreeModel)
-        : [];
-      setModels(freeOnly);
+      // Show all OpenRouter models (no free-only filter)
+      setModels(Array.isArray(fetchedModels) ? fetchedModels : []);
     } catch (error) {
       console.error("Failed to fetch models:", error);
     } finally {
@@ -244,6 +289,90 @@ export const ScribeApiSetup = () => {
     }
   };
 
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!loginEmail.trim()) {
+      setError("Please enter a valid email");
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch('http://localhost:8083/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: loginEmail.trim() }),
+      });
+
+      const responseText = await response.text();
+      
+      if (!response.ok) {
+        let errorMessage = `Login failed: ${response.status}`;
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.error || errorMessage;
+        } catch (parseError) {
+          // Keep default error message
+        }
+        setError(errorMessage);
+        return;
+      }
+
+      // Parse successful response
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse login response:', parseError);
+        setError('Invalid response from server');
+        return;
+      }
+
+      const { license_key } = data;
+
+      if (!license_key) {
+        setError('No license key returned from server');
+        return;
+      }
+
+      // Generate and store instance_id (required by app initialization)
+      const instanceId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Store the license key and instance_id
+      await invoke("secure_storage_save", {
+        items: [
+          {
+            key: LICENSE_KEY_STORAGE_KEY,
+            value: license_key,
+          },
+          {
+            key: INSTANCE_ID_STORAGE_KEY,
+            value: instanceId,
+          },
+        ],
+      });
+
+      setSuccess("Login successful! License loaded.");
+      setLoginEmail("");
+      setShowLoginForm(false);
+      setScribeApiEnabled(true);
+
+      await loadLicenseStatus();
+      await getActiveLicenseStatus();
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleResetTrial = async () => {
     setIsLoading(true);
     setError(null);
@@ -267,6 +396,19 @@ export const ScribeApiSetup = () => {
   };
 
   const handleModelSelect = async (model: Model) => {
+    if (model.id === "__exora__") {
+      setSelectedModel(null);
+      setIsPopoverOpen(false);
+      setSearchValue("");
+      try {
+        await invoke("secure_storage_remove", {
+          keys: [SELECTED_Scribe_MODEL_STORAGE_KEY],
+        });
+      } catch (e) {
+        console.error("Failed to clear model selection:", e);
+      }
+      return;
+    }
     setSelectedModel(model);
     setIsPopoverOpen(false); // Close popover when model is selected
     setSearchValue(""); // Reset search when model is selected
@@ -317,7 +459,7 @@ export const ScribeApiSetup = () => {
 
   const title = isModelsLoading
     ? "Loading Models..."
-    : `Scribe supports ${models?.length} model${
+    : `Ghost supports ${models?.length} model${
         models?.length !== 1 ? "s" : ""
       }`;
 
@@ -325,7 +467,7 @@ export const ScribeApiSetup = () => {
     ? "Fetching the list of supported models..."
     : providerList
     ? `Access top models from providers like ${providerList}. and select smaller models for faster responses.`
-    : "Explore all the models Scribe supports.";
+    : "Explore all the models Ghost supports.";
 
   const selectedIsVisionCapable = (() => {
     const modalityHasVision = (selectedModel?.modality || "")
@@ -357,15 +499,13 @@ export const ScribeApiSetup = () => {
     .slice(0, 3);
 
   return (
-    <div id="Scribe-api" className="space-y-3 -mt-2">
-      {/* Support section removed as requested */}
-
-      <div className="space-y-2 pt-2">
-        <div className="flex items-center justify-between border-b pb-2">
+    <div id="Scribe-api" className="space-y-4">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-input/30 pb-4 mb-4">
           <Header
             titleClassName="text-lg"
-            title="Scribe Access"
-            description="Scribe license to unlock faster responses, quicker support and premium features."
+            title="Ghost Access"
+            description="Ghost license to unlock faster responses, quicker support and premium features."
           />
           <div className="flex flex-row items-center gap-2">
             {!storedLicenseKey && <GetLicense />}
@@ -388,24 +528,31 @@ export const ScribeApiSetup = () => {
           </div>
         )}
         <Header title={title} description={description} />
+        {isOllamaSelected && !hasSelectedOtherModel && (
+          <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
+            <p className="text-sm text-blue-700 dark:text-blue-400">
+              <strong>Exora AI</strong> is selected. Or select a model below to use OpenRouter instead.
+            </p>
+          </div>
+        )}
         <Popover
-          modal={true}
-          open={isPopoverOpen}
-          onOpenChange={handlePopoverOpenChange}
-        >
-          <PopoverTrigger
-            asChild
-            disabled={isModelsLoading}
-            className="cursor-pointer flex justify-start"
+            modal={true}
+            open={isPopoverOpen}
+            onOpenChange={handlePopoverOpenChange}
           >
-            <Button
-              variant="outline"
-              className="h-11 text-start shadow-none w-full"
+            <PopoverTrigger
+              asChild
+              disabled={isModelsLoading}
+              className="cursor-pointer flex justify-start"
             >
-              {selectedModel ? selectedModel.name : "Select pro models"}{" "}
-              <ChevronDown />
-            </Button>
-          </PopoverTrigger>
+              <Button
+                variant="outline"
+                className="h-11 text-start shadow-none w-full"
+              >
+                {selectedModel ? selectedModel.name : "Select pro models"}{" "}
+                <ChevronDown />
+              </Button>
+            </PopoverTrigger>
           <PopoverContent
             align="end"
             side="bottom"
@@ -425,6 +572,29 @@ export const ScribeApiSetup = () => {
                   No models found. Please try again later.
                 </CommandEmpty>
                 <CommandGroup>
+                  {isOllamaSelected && (
+                    <CommandItem
+                      key="__exora__"
+                      className="cursor-pointer"
+                      onSelect={() => handleModelSelect(EXORA_AI_OPTION)}
+                      value="Exora AI Use local Ollama"
+                    >
+                      <div className="flex flex-col">
+                        <div className="flex flex-row items-center gap-2">
+                          <p className="text-sm font-medium">Exora AI</p>
+                          <div className="text-xs border border-input/50 bg-muted/50 rounded-full px-2">
+                            chat
+                          </div>
+                          <div className="text-xs text-orange-600 bg-white rounded-full px-2">
+                            Exora AI
+                          </div>
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          Use local Ollama
+                        </p>
+                      </div>
+                    </CommandItem>
+                  )}
                   {models.map((model, index) => (
                     <CommandItem
                       disabled={!model?.isAvailable}
@@ -489,43 +659,88 @@ export const ScribeApiSetup = () => {
         <div className="space-y-2">
           {!storedLicenseKey ? (
             <>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">License Key</label>
-                <p className="text-sm font-medium text-muted-foreground">
-                  After completing your purchase, you'll receive a license key
-                  via email. Paste it below to activate.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  placeholder="Enter your license key (e.g., 38b1460a-5104-4067-a91d-77b872934d51)"
-                  value={licenseKey}
-                  onChange={(value) => {
-                    setLicenseKey(
-                      typeof value === "string" ? value : value.target.value
-                    );
-                    setError(null); // Clear error when user types
-                    setSuccess(null); // Clear success when user types
-                  }}
-                  onKeyDown={handleKeyDown}
-                  disabled={isLoading}
-                  className="flex-1 h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
-                />
-                <Button
-                  onClick={handleActivateLicense}
-                  disabled={isLoading || !licenseKey.trim()}
-                  size="icon"
-                  className="shrink-0 h-11 w-11"
-                  title="Activate License"
-                >
-                  {isLoading ? (
-                    <LoaderIcon className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <KeyIcon className="h-4 w-4" />
+              {showLoginForm ? (
+                // LOGIN FORM
+                <form onSubmit={handleLogin} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Email Address</label>
+                    <p className="text-sm text-muted-foreground">
+                      Enter the email associated with your Ghost account
+                    </p>
+                  </div>
+                  <Input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={loginEmail}
+                    onChange={(e) => {
+                      setLoginEmail(e.target.value);
+                      setError(null);
+                    }}
+                    disabled={isLoading}
+                    className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
+                  />
+                  {error && (
+                    <p className="text-xs text-red-500">{error}</p>
                   )}
-                </Button>
-              </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      disabled={isLoading || !loginEmail.trim()}
+                      className="flex-1 h-10"
+                    >
+                      {isLoading ? (
+                        <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
+                      ) : null}
+                      Login
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setShowLoginForm(false);
+                        setLoginEmail("");
+                        setError(null);
+                      }}
+                      className="flex-1 h-10"
+                    >
+                      Back
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                // REGISTER/LOGIN OPTIONS
+                <>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Get Started</label>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      Choose an option to get your license key
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      onClick={() => {
+                        setShowLoginForm(true);
+                        setError(null);
+                      }}
+                      variant="outline"
+                      className="h-10"
+                    >
+                      Already have an account? Login
+                    </Button>
+                    <p className="text-xs text-center text-muted-foreground">or</p>
+                    <Button
+                      onClick={() => {
+                        // Show registration in UsageDashboard
+                        // For now, we'll direct to it
+                        alert("Please use the 'Create new account' section below");
+                      }}
+                      className="h-10"
+                    >
+                      Create new account
+                    </Button>
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -537,30 +752,16 @@ export const ScribeApiSetup = () => {
                   disabled={true}
                   className="flex-1 h-11 border-1 border-input/50 bg-muted/50"
                 />
-                <Button
-                  onClick={handleRemoveLicense}
-                  disabled={isLoading}
-                  size="icon"
-                  variant="destructive"
-                  className="shrink-0 h-11 w-11"
-                  title="Remove License"
-                >
-                  {isLoading ? (
-                    <LoaderIcon className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <TrashIcon className="h-4 w-4" />
-                  )}
-                </Button>
               </div>
               {storedLicenseKey ? (
                 <div className="-mt-1">
                   <p className="text-sm font-medium text-muted-foreground select-auto">
                     If you need any help or any assistance, contact
-                    support@Scribe.com
+                    support@exora.solutions
                   </p>
                 </div>
               ) : null}
-              <div className="mt-3">
+              <div className="mt-3 flex gap-2">
                 <Button
                   onClick={handleResetTrial}
                   disabled={isLoading}
@@ -571,6 +772,17 @@ export const ScribeApiSetup = () => {
                   ) : null}
                   Reset Trial (14 days)
                 </Button>
+                <Button
+                  onClick={handleRemoveLicense}
+                  disabled={isLoading}
+                  variant="outline"
+                  className="h-9"
+                >
+                  {isLoading ? (
+                    <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  Logout
+                </Button>
               </div>
             </>
           )}
@@ -578,13 +790,13 @@ export const ScribeApiSetup = () => {
       </div>
       <div className="flex justify-between items-center">
         <Header
-          title={`${ScribeApiEnabled ? "Disable" : "Enable"} Scribe API`}
+          title={`${ScribeApiEnabled ? "Disable" : "Enable"} Ghost API`}
           description={
             storedLicenseKey
               ? ScribeApiEnabled
-                ? "Using all Scribe APIs for audio, and chat."
+                ? "Using all Ghost APIs for audio, and chat."
                 : "Using all your own AI Providers for audio, and chat."
-              : "A valid license is required to enable Scribe API or you can use your own AI Providers and STT Providers."
+              : "A valid license is required to enable Ghost API or you can use your own AI Providers and STT Providers."
           }
         />
         <Switch

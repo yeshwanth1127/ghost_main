@@ -208,6 +208,8 @@ export function getStreamingContent(
     defaultPath.replace(".message.", ".delta."),
     // 2. Then, add other common patterns.
     "choices[0].delta.content", // OpenAI, Groq, Mistral, Perplexity
+    "message.content", // Ollama /v1/chat/completions streaming
+    "response", // Ollama /api/generate streaming
     "candidates[0].content.parts[0].text", // Gemini
     "delta.text", // Claude
     "text", // Cohere

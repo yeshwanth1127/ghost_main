@@ -4,3 +4,4 @@ pub mod chat;
 pub mod audio;
 pub mod models;
 pub mod updates;
+pub mod usage;

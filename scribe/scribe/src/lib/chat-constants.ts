@@ -60,6 +60,16 @@ export const DOWNLOAD_SUCCESS_DISPLAY_MS = 2000;
 export const CONVERSATION_TITLE_WORD_LIMIT = 6;
 
 /**
+ * Context window management: limit history size for stable latency and cost.
+ * MAX_HISTORY_MESSAGES: max number of messages (user + assistant) to send.
+ * MAX_CONTEXT_TOKENS: rough token budget for history (model context is larger; this reserves room for system + user message).
+ * Approximate tokens: ~4 chars per token for English.
+ */
+export const MAX_HISTORY_MESSAGES = 24;
+export const MAX_CONTEXT_TOKENS = 4000;
+export const CHARS_PER_TOKEN_ESTIMATE = 4;
+
+/**
  * CONVERSATION_ID_RANDOM_LENGTH
  *
  * Length of the random suffix in conversation IDs.

@@ -1,0 +1,48 @@
+{
+  "file_read": [
+    "read a file",
+    "read the file",
+    "open and read file",
+    "get file contents",
+    "show me the file",
+    "read file at path",
+    "display file contents",
+    "load file"
+  ],
+  "file_write": [
+    "write content to a file",
+    "save this into a file",
+    "write file with content",
+    "overwrite the file",
+    "write to file",
+    "save to file",
+    "write content to file at path"
+  ],
+  "file_create": [
+    "create a file",
+    "make a new file",
+    "create file at path",
+    "create empty file",
+    "create new file"
+  ],
+  "run_command": [
+    "run a command",
+    "execute this in terminal",
+    "run this bash command",
+    "run the command",
+    "execute command",
+    "run in terminal",
+    "run npm install",
+    "run script",
+    "execute in shell",
+    "run program"
+  ],
+  "list_files": [
+    "list files",
+    "list files in directory",
+    "list directory contents",
+    "show files in folder",
+    "what files are in",
+    "list all files"
+  ]
+}

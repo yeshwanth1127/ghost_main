@@ -41,8 +41,8 @@ export const MessageHistoryView = ({
 
   return (
     <>
-      <div className="border-b border-input/50 p-4">
-        <div className="flex items-center justify-between">
+      <div className="border-b border-input/50 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <Button
               size="icon"
@@ -107,7 +107,7 @@ export const MessageHistoryView = ({
         </div>
       </div>
 
-      <ScrollArea className="h-[calc(100vh-10rem)]">
+      <ScrollArea className="h-[min(400px,calc(100vh-10rem))]">
         <div className="p-4 space-y-4">
           {viewingConversation.messages
             .sort((a, b) => a.timestamp - b.timestamp)

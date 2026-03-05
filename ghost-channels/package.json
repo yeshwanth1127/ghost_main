@@ -1,0 +1,28 @@
+{
+  "name": "ghost-channels",
+  "version": "1.0.0",
+  "description": "Ghost channel server: Telegram and WhatsApp adapters that connect to scribe-api gateway",
+  "type": "module",
+  "main": "dist/entry.js",
+  "bin": {
+    "ghost-channels": "dist/entry.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/entry.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "grammy": "^1.21.1",
+    "ws": "^8.0.0",
+    "@whiskeysockets/baileys": "^6.7.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -28,9 +28,10 @@ fn main() {
         println!("cargo:rustc-env=API_ACCESS_KEY={}", api_access_key);
     }
 
-    if let Ok(app_endpoint) = std::env::var("APP_ENDPOINT") {
-        println!("cargo:rustc-env=APP_ENDPOINT={}", app_endpoint);
-    }
+    // Default to local backend for dev; override with APP_ENDPOINT in .env
+    let app_endpoint = std::env::var("APP_ENDPOINT")
+        .unwrap_or_else(|_| "http://127.0.0.1:8083".to_string());
+    println!("cargo:rustc-env=APP_ENDPOINT={}", app_endpoint);
 
     if let Ok(posthog_api_key) = std::env::var("POSTHOG_API_KEY") {
         println!("cargo:rustc-env=POSTHOG_API_KEY={}", posthog_api_key);

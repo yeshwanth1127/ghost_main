@@ -32,26 +32,26 @@ export const ConversationListView = ({
 
   return (
     <>
-      <div className="border-b border-input/50 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+      <div className="border-b border-input/50 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-base font-semibold truncate">
             All Conversations
           </h2>
           <Button
             size="sm"
             onClick={handleNewChat}
-            className="text-xs"
+            className="shrink-0"
             title="Start new chat"
           >
             New Chat
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground mt-0.5">
           Your conversation history
         </p>
       </div>
 
-      <ScrollArea className="h-[calc(100vh-8.75rem)]">
+      <ScrollArea className="h-[min(400px,calc(100vh-10rem))]">
         <div className="p-2">
           {conversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-center">

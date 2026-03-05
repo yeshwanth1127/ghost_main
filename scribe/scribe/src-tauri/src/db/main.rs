@@ -31,6 +31,20 @@ pub fn migrations() -> Vec<Migration> {
             sql: include_str!("migrations/agent-runs.sql"),
             kind: MigrationKind::Up,
         },
+        // Migration 5: Create execution_tickets table (Moltbot-style tool execution lifecycle)
+        Migration {
+            version: 5,
+            description: "create_execution_tickets_table",
+            sql: include_str!("migrations/execution-tickets.sql"),
+            kind: MigrationKind::Up,
+        },
+        // Migration 6: Conversation metadata (model_used, total_tokens) and conversation_facts (semantic memory)
+        Migration {
+            version: 6,
+            description: "conversation_metadata_and_facts",
+            sql: include_str!("migrations/conversation-metadata.sql"),
+            kind: MigrationKind::Up,
+        },
     ]
 }
 

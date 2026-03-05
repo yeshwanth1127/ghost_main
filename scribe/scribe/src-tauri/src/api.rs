@@ -6,15 +6,26 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_machine_uid::MachineUidExt;
 
+const LOCAL_BACKEND: &str = "http://127.0.0.1:8083";
+
 fn get_app_endpoint() -> Result<String, String> {
-    if let Ok(endpoint) = env::var("APP_ENDPOINT") {
-        return Ok(endpoint);
+    // Force local backend when USE_LOCAL_BACKEND=1 or when APP_ENDPOINT points to remote
+    if env::var("USE_LOCAL_BACKEND").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
+        return Ok(LOCAL_BACKEND.to_string());
     }
 
-    match option_env!("APP_ENDPOINT") {
-        Some(endpoint) => Ok(endpoint.to_string()),
-        None => Err("APP_ENDPOINT environment variable not set. Please ensure it's set during the build process.".to_string())
+    let endpoint = env::var("APP_ENDPOINT")
+        .ok()
+        .or_else(|| option_env!("APP_ENDPOINT").map(String::from))
+        .unwrap_or_else(|| LOCAL_BACKEND.to_string());
+
+    let trimmed = endpoint.trim();
+    // Override remote URL with local backend for development
+    if trimmed.contains("ghost.exora.solutions") {
+        return Ok(LOCAL_BACKEND.to_string());
     }
+
+    Ok(trimmed.to_string())
 }
 
 fn get_api_access_key() -> Result<String, String> {
@@ -233,8 +244,9 @@ pub async fn chat_stream(
         return Err("No model selected. Please select a provider and model in settings.".to_string());
     }
 
-    // Log request details before moving values
+    // Log request details before moving values (eprintln always visible in terminal)
     let url = format!("{}/api/v1/chat?stream=true", app_endpoint);
+    eprintln!("[chat_stream] 📤 Sending to scribe-api: {} (provider={}, model={})", url, provider_header, model_header);
     tracing::info!("📤 Sending chat request to: {}", url);
     tracing::info!("   Provider: {:?}, Model: {:?}", provider, model);
     tracing::info!("   License key: {}...", &license_key[..license_key.len().min(8)]);
@@ -248,16 +260,29 @@ pub async fn chat_stream(
         history,
     };
 
-    // Make HTTP request to chat endpoint with streaming
-    let client = reqwest::Client::new();
+    // Make HTTP request to chat endpoint with streaming (timeout prevents indefinite hang)
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
     
+    eprintln!("[chat_stream] 🌐 Sending POST (waiting for response)...");
     tracing::info!("🌐 Making HTTP POST request to: {}", url);
     tracing::info!("   Provider: {:?}, Model: {:?}", provider, model);
     tracing::info!("   Request body size: {} bytes", serde_json::to_string(&chat_request).unwrap_or_default().len());
 
     let response = client
         .post(&url)
+        .timeout(std::time::Duration::from_secs(120))
         .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream")
+        .header("Accept-Encoding", "identity")
+        .header("Connection", "close")
         .header("Authorization", format!("Bearer {}", api_access_key))
         .header("license_key", &license_key)
         .header("instance", &instance_id)
@@ -269,6 +294,7 @@ pub async fn chat_stream(
         .await
         .map_err(|e| {
             let error_msg = format!("{}", e);
+            eprintln!("[chat_stream] ❌ Request failed: {}", error_msg);
             tracing::error!("❌ Chat request failed: {}", error_msg);
             if error_msg.contains("Failed to connect") || error_msg.contains("Connection refused") {
                 format!("Failed to connect to API server at {}. Is the server running? Error: {}", app_endpoint, error_msg)
@@ -286,6 +312,7 @@ pub async fn chat_stream(
         })?;
     
     let status = response.status();
+    eprintln!("[chat_stream] 📥 Response: status={}, content-type={:?}", status, response.headers().get("content-type").and_then(|h| h.to_str().ok()));
     tracing::info!("📥 Received response status: {}", status);
     
     // Check content type first - API might return JSON error even with 200 status
@@ -314,6 +341,7 @@ pub async fn chat_stream(
             .await
             .unwrap_or_else(|_| "Unknown server error".to_string());
 
+        eprintln!("[chat_stream] ❌ Server error {}: {}", status, error_text);
         tracing::error!("❌ Chat API returned error status {}: {}", status, error_text);
 
         // Try to parse error as JSON to get a more specific error message
@@ -335,6 +363,7 @@ pub async fn chat_stream(
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
+        eprintln!("[chat_stream] ❌ API returned JSON (not SSE): {}", error_text);
         tracing::error!("❌ API returned JSON error (not SSE stream): {}", error_text);
         
         if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_text) {
@@ -350,6 +379,7 @@ pub async fn chat_stream(
     }
 
     // Handle streaming response
+    eprintln!("[chat_stream] 📡 Reading SSE stream...");
     tracing::info!("📡 Starting to read SSE stream...");
     let mut stream = response.bytes_stream();
     let mut full_response = String::new();
@@ -372,18 +402,20 @@ pub async fn chat_stream(
                 .unwrap_or("")
                 .trim();
 
-            // Emit raw SSE line for debugging UI visibility issues
+            // Skip OPENROUTER PROCESSING comments/error wrappers - never display in chat
+            if json_str.contains(r#""error":": OPENROUTER PROCESSING""#)
+                || json_str.contains(r#""error":" OPENROUTER PROCESSING""#)
+                || json_str.trim() == ": OPENROUTER PROCESSING"
+            {
+                return;
+            }
+
+            // Emit raw SSE line for debugging only (not as chat content)
             if !json_str.is_empty() {
                 if let Err(e) = app.emit("chat_stream_raw_line", json_str) {
                     tracing::error!("❌ Failed to emit chat_stream_raw_line: {}", e);
                 }
                 raw_lines.push(json_str.to_string());
-                // Always emit raw line as chunk so UI gets something
-                if let Err(e) = app.emit("chat_stream_chunk", json_str) {
-                    tracing::error!("❌ Failed to emit raw chat_stream_chunk: {}", e);
-                } else {
-                    tracing::info!("📤 Emitted raw chunk. json_len={}", json_str.len());
-                }
             }
 
             if json_str == "[DONE]" {
@@ -393,18 +425,30 @@ pub async fn chat_stream(
             if !json_str.is_empty() {
                 // Try to parse the JSON and extract content
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(json_str) {
+                    // Debug: Log the structure of incoming JSON
+                    let json_preview = serde_json::to_string(&parsed)
+                        .unwrap_or_default()
+                        .chars()
+                        .take(300)
+                        .collect::<String>();
+                    tracing::info!("🔍 Parsed SSE JSON structure: {}", json_preview);
+                    
                     // Heuristic extractor: try common paths then fall back to a recursive search
                     fn find_text(v: &serde_json::Value) -> Option<String> {
-                        // Try known shapes quickly
-                        if let Some(s) = v.get("choices")
+                        // Try known shapes quickly (OpenAI, Nemotron, etc.)
+                        if let Some(delta) = v.get("choices")
                             .and_then(|c| c.as_array()).and_then(|a| a.get(0))
                             .and_then(|c0| c0.get("delta"))
-                            .and_then(|d| d.get("content"))
                         {
-                            if let Some(text) = s.as_str() {
-                                return Some(text.to_string());
+                            // Emit only content, NOT reasoning (reasoning = model's internal thinking, hide from user)
+                            if let Some(s) = delta.get("content") {
+                                if let Some(text) = s.as_str() {
+                                    if !text.is_empty() {
+                                        return Some(text.to_string());
+                                    }
+                                }
                             }
-                            if let Some(arr) = s.as_array() {
+                            if let Some(arr) = delta.get("content").and_then(|c| c.as_array()) {
                                 if let Some(text) = arr.get(0)
                                     .and_then(|p| p.get("text"))
                                     .and_then(|t| t.as_str())
@@ -452,6 +496,7 @@ pub async fn chat_stream(
                                 }
                                 serde_json::Value::Object(map) => {
                                     // Prioritize likely keys
+                                    // Exclude "reasoning" - it's internal thinking, not user-facing content
                                     let preferred = [
                                         "content", "text", "delta", "output_text", "generated_text", "message"
                                     ];
@@ -482,15 +527,15 @@ pub async fn chat_stream(
                         if !content.is_empty() {
                             *chunk_count += 1;
                             full_response.push_str(&content);
-                            tracing::info!("📤 Emitting chunk #{}: {} chars", *chunk_count, content.len());
-                            if let Err(e) = app.emit("chat_stream_chunk", &content) {
-                                tracing::error!("❌ Failed to emit chat_stream_chunk: {}", e);
-                            }
+                            tracing::info!("📤 Emitting chunk #{}: {} chars, content: {:?}", 
+                                *chunk_count, content.len(), content.chars().take(100).collect::<String>());
+                            let _ = app.emit_to("main", "chat_stream_chunk", &content);
                         } else {
                             tracing::warn!("⚠️ Parsed SSE but content empty. json_len={}", json_str.len());
                         }
                     } else {
-                        tracing::warn!("⚠️ Parsed SSE but no content found. json_len={}", json_str.len());
+                        tracing::warn!("⚠️ Parsed SSE but no content found. json_preview: {}", 
+                            serde_json::to_string(&parsed).unwrap_or_default().chars().take(200).collect::<String>());
                     }
                 } else {
                     tracing::warn!(
@@ -531,6 +576,9 @@ pub async fn chat_stream(
         iteration_count += 1;
         match chunk_result {
             Ok(bytes) => {
+                if iteration_count == 1 {
+                    eprintln!("[chat_stream] 📦 First chunk received ({} bytes)", bytes.len());
+                }
                 total_bytes += bytes.len();
                 let chunk_str = String::from_utf8_lossy(&bytes);
                 tracing::info!("📦 Iteration {}: Received {} bytes of raw data", iteration_count, bytes.len());
@@ -542,16 +590,98 @@ pub async fn chat_stream(
                 process_buffer(&mut buffer, &mut chunk_count, &mut full_response, &mut raw_lines);
             }
             Err(e) => {
+                eprintln!("[chat_stream] ❌ Stream error: {}", e);
                 tracing::error!("❌ Stream error: {}", e);
+                if !full_response.trim().is_empty() {
+                    tracing::warn!(
+                        "⚠️ Stream decode error after partial content ({} chars); returning partial response",
+                        full_response.len()
+                    );
+                    break;
+                }
+
+                tracing::warn!("⚠️ Stream failed before content; attempting non-streaming fallback");
+                eprintln!("[chat_stream] ⚠️ Stream failed before content; trying /api/v1/chat fallback...");
+
+                let fallback_client = reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(30))
+                    .http1_only()
+                    .no_gzip()
+                    .no_brotli()
+                    .no_deflate()
+                    .no_zstd()
+                    .build()
+                    .map_err(|builder_err| format!("Stream error: {}. Fallback client build failed: {}", e, builder_err))?;
+
+                let fallback_url = format!("{}/api/v1/chat", app_endpoint);
+                let fallback_response = fallback_client
+                    .post(&fallback_url)
+                    .timeout(std::time::Duration::from_secs(120))
+                    .header("Content-Type", "application/json")
+                    .header("Accept", "application/json")
+                    .header("Accept-Encoding", "identity")
+                    .header("Connection", "close")
+                    .header("Authorization", format!("Bearer {}", api_access_key))
+                    .header("license_key", &license_key)
+                    .header("instance", &instance_id)
+                    .header("provider", &provider_header)
+                    .header("model", &model_header)
+                    .header("machine_id", &machine_id)
+                    .json(&chat_request)
+                    .send()
+                    .await
+                    .map_err(|fallback_err| format!("Stream error: {}. Fallback failed: {}", e, fallback_err))?;
+
+                let fallback_status = fallback_response.status();
+                let fallback_text = match fallback_response.text().await {
+                    Ok(text) => text,
+                    Err(text_err) => {
+                        let msg = format!("Stream decode failed and fallback decode failed: {}", text_err);
+                        eprintln!("[chat_stream] ❌ {}", msg);
+                        let _ = app.emit_to("main", "chat_stream_chunk", &msg);
+                        let _ = app.emit_to("main", "chat_stream_complete", &msg);
+                        return Err(msg);
+                    }
+                };
+
+                eprintln!(
+                    "[chat_stream] 📥 Fallback response: status={}, bytes={}",
+                    fallback_status,
+                    fallback_text.len()
+                );
+
+                if fallback_status.is_success() {
+                    if let Ok(parsed) = serde_json::from_str::<ChatResponse>(&fallback_text) {
+                        if let Some(message) = parsed.message {
+                            full_response = message;
+                            let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+                            break;
+                        }
+                    }
+
+                    if !fallback_text.trim().is_empty() {
+                        full_response = fallback_text;
+                        let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+                        break;
+                    }
+
+                    let msg = "Fallback succeeded but returned empty body".to_string();
+                    let _ = app.emit_to("main", "chat_stream_chunk", &msg);
+                    let _ = app.emit_to("main", "chat_stream_complete", &msg);
+                    return Err(msg);
+                }
+
                 return Err(format!("Stream error: {}", e));
             }
         }
     }
 
     // Emit completion event
+    eprintln!("[chat_stream] ✅ Stream done: iterations={}, bytes={}, chunks={}", iteration_count, total_bytes, chunk_count);
     tracing::info!("✅ Stream complete. Iterations: {}, Total bytes: {}, Chunks extracted: {}, Full response length: {}", iteration_count, total_bytes, chunk_count, full_response.len());
     
     if iteration_count == 0 {
+        eprintln!("[chat_stream] ⚠️ No data received - server may have returned empty stream or connection dropped");
         tracing::warn!("⚠️ Stream completed with 0 iterations - no data was received from the server");
     }
     if total_bytes == 0 {
@@ -572,17 +702,33 @@ pub async fn chat_stream(
             full_response = buffer;
         }
         if !full_response.is_empty() {
-            let _ = app.emit("chat_stream_chunk", &full_response);
+            let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
         }
     }
 
     // Fallback to non-streaming call if we still have nothing
     if full_response.trim().is_empty() {
         tracing::warn!("⚠️ Empty response after streaming. Falling back to non-streaming request.");
+        eprintln!("[chat_stream] ⚠️ Empty stream output; trying /api/v1/chat fallback...");
+
+        let fallback_client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .http1_only()
+            .no_gzip()
+            .no_brotli()
+            .no_deflate()
+            .no_zstd()
+            .build()
+            .map_err(|e| format!("Fallback client build failed: {}", e))?;
+
         let fallback_url = format!("{}/api/v1/chat", app_endpoint);
-        let fallback_response = client
+        let fallback_response = fallback_client
             .post(&fallback_url)
+            .timeout(std::time::Duration::from_secs(120))
             .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .header("Accept-Encoding", "identity")
+            .header("Connection", "close")
             .header("Authorization", format!("Bearer {}", api_access_key))
             .header("license_key", &license_key)
             .header("instance", &instance_id)
@@ -595,23 +741,39 @@ pub async fn chat_stream(
             .map_err(|e| format!("Fallback request failed: {}", e))?;
 
         let fallback_status = fallback_response.status();
-        let fallback_text = fallback_response.text().await.unwrap_or_default();
+        let fallback_text = fallback_response
+            .text()
+            .await
+            .map_err(|e| format!("Fallback decode failed: {}", e))?;
+
+        eprintln!(
+            "[chat_stream] 📥 Fallback response: status={}, bytes={}",
+            fallback_status,
+            fallback_text.len()
+        );
+
         if fallback_status.is_success() {
             if let Ok(parsed) = serde_json::from_str::<ChatResponse>(&fallback_text) {
                 if let Some(message) = parsed.message {
                     full_response = message;
-                    let _ = app.emit("chat_stream_chunk", &full_response);
+                    let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
                 }
             } else if !fallback_text.trim().is_empty() {
                 full_response = fallback_text;
-                let _ = app.emit("chat_stream_chunk", &full_response);
+                let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
             }
         } else {
             tracing::error!("❌ Fallback request failed: {}", fallback_text);
         }
     }
+
+    if full_response.trim().is_empty() {
+        let msg = "No response generated from stream or fallback".to_string();
+        let _ = app.emit_to("main", "chat_stream_chunk", &msg);
+        full_response = msg;
+    }
     
-    let _ = app.emit("chat_stream_complete", &full_response);
+    let _ = app.emit_to("main", "chat_stream_complete", &full_response);
 
     Ok(full_response)
 }

@@ -9,9 +9,8 @@ pub struct OpenRouterService {
 
 impl OpenRouterService {
     pub fn new() -> Self {
-        // TODO: Load config from environment
         Self {
-            config: Config::from_env().unwrap(),
+            config: Config::from_env().expect("Failed to load config from environment (DATABASE_URL, API_ACCESS_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY required)"),
         }
     }
 
@@ -74,16 +73,25 @@ impl OpenRouterService {
         let body = serde_json::json!({
             "model": model,
             "messages": messages,
-            "stream": true
+            "stream": true,
+            "reasoning": {
+                "exclude": true
+            }
         });
 
         let url = format!("{}/chat/completions", self.config.openrouter_base_url);
+        let api_key_len = self.config.openrouter_api_key.len();
+        eprintln!("[OpenRouter] 🌐 Request: url={}, model={}, api_key_len={}", url, model, api_key_len);
         tracing::info!(
             "🌐 OpenRouter request: url={}, model={}, api_key_len={}",
             url,
             model,
-            self.config.openrouter_api_key.len()
+            api_key_len
         );
+        if api_key_len == 0 {
+            eprintln!("[OpenRouter] ❌ OPENROUTER_API_KEY is empty! Set it in scribe-api/.env");
+            tracing::error!("❌ OPENROUTER_API_KEY is empty! Set it in scribe-api/.env");
+        }
         tracing::info!(
             "   payload bytes={}",
             serde_json::to_string(&body).unwrap_or_default().len()
@@ -96,7 +104,11 @@ impl OpenRouterService {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                tracing::error!("❌ OpenRouter HTTP request failed: {}", e);
+                e
+            })?;
 
         let status = response.status();
         let content_type = response
@@ -104,6 +116,7 @@ impl OpenRouterService {
             .get("content-type")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
+        eprintln!("[OpenRouter] 📥 Response: status={}, content-type={}", status, content_type);
         tracing::info!(
             "🌐 OpenRouter response: status={}, content-type={}",
             status,
@@ -112,13 +125,26 @@ impl OpenRouterService {
 
         if !status.is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            tracing::error!("❌ OpenRouter error: {}", error_text);
+            eprintln!("[OpenRouter] ❌ API error ({}): {}", status, error_text);
+            tracing::error!("❌ OpenRouter API error (status {}): {}", status, error_text);
             return Ok(futures::stream::once(async move { Ok(error_text) }).boxed());
         }
 
-        // Return streaming response
-        Ok(response.bytes_stream().map(|chunk| {
-            chunk.map(|bytes| String::from_utf8_lossy(&bytes).to_string())
-        }).boxed())
+        // Return streaming response with per-chunk logging for debugging empty responses
+        let chunk_log_interval = 10;
+        let chunk_counter = std::sync::atomic::AtomicU32::new(0);
+        Ok(response.bytes_stream()
+            .map(move |chunk| {
+                chunk.map(|bytes| {
+                    let idx = chunk_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let s = String::from_utf8_lossy(&bytes).to_string();
+                    if idx <= chunk_log_interval || idx % 50 == 0 {
+                        let preview = s.chars().take(150).collect::<String>();
+                        tracing::info!("📦 OpenRouter chunk #{}: {} bytes, preview: {:?}", idx, s.len(), preview);
+                    }
+                    s
+                })
+            })
+            .boxed())
     }
 }

@@ -1,5 +1,7 @@
 import { fetchAIResponse } from "./ai-response.function";
 import { Message } from "@/types";
+import { safeLocalStorage } from "@/lib/storage";
+import { STORAGE_KEYS } from "@/config";
 
 /**
  * Plan an action using LLM with Action Schema v2 format
@@ -54,15 +56,28 @@ Important rules:
 
   const planningPrompt = `Convert this request into an Action Schema v2 plan:\n\n${userInput}`;
 
+  // Load selected provider from storage (action planner has no React context)
+  const savedProvider = safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_AI_PROVIDER);
+  const selectedProvider = savedProvider
+    ? (() => {
+        try {
+          const p = JSON.parse(savedProvider);
+          return {
+            provider: p?.provider || "exora",
+            variables: p?.variables || { model: "llama3:latest" },
+          };
+        } catch {
+          return { provider: "exora", variables: { model: "llama3:latest" } };
+        }
+      })()
+    : { provider: "exora", variables: { model: "llama3:latest" } };
+
   try {
     // Use existing AI response function
     let fullResponse = "";
     for await (const chunk of fetchAIResponse({
-      provider: undefined, // Will use selected provider
-      selectedProvider: {
-        provider: "", // Will be determined by useCompletion
-        variables: {},
-      },
+      provider: undefined, // Resolved from selectedProvider in fetchAIResponse
+      selectedProvider,
       systemPrompt,
       history,
       userMessage: planningPrompt,

@@ -33,10 +33,33 @@ export function PathPromptDialog({
   const [error, setError] = useState<string | null>(null);
 
   const handleBrowse = async () => {
-    // Browse functionality requires @tauri-apps/plugin-dialog
-    // For now, the button is disabled and users should type paths manually
-    // TODO: Add @tauri-apps/plugin-dialog package to enable file browser
-    console.log("Browse functionality requires @tauri-apps/plugin-dialog package");
+    try {
+      const { open, save } = await import("@tauri-apps/plugin-dialog");
+      let selected: string | string[] | null = null;
+      if (isDestination && !isDirectory) {
+        selected = await save({
+          title: "Choose file location",
+          defaultPath: path.trim() || undefined,
+        });
+      } else {
+        selected = await open({
+          title: isDirectory ? "Select directory" : "Select file",
+          directory: isDirectory,
+          multiple: false,
+          defaultPath: path.trim() || undefined,
+        });
+      }
+      if (selected) {
+        const resolved = typeof selected === "string" ? selected : Array.isArray(selected) ? selected[0] : null;
+        if (resolved) {
+          setPath(resolved);
+          setError(null);
+        }
+      }
+    } catch (err) {
+      console.error("File picker failed:", err);
+      setError("File picker failed. Please enter the path manually.");
+    }
   };
 
   const handleConfirm = () => {
@@ -92,10 +115,9 @@ export function PathPromptDialog({
                 type="button"
                 variant="outline"
                 onClick={handleBrowse}
-                disabled={true}
-                title="Browse requires @tauri-apps/plugin-dialog (type path manually)"
+                title={isDirectory ? "Browse for directory" : "Browse for file"}
               >
-                <FolderOpen className="w-4 h-4 opacity-50" />
+                <FolderOpen className="w-4 h-4" />
               </Button>
             </div>
             {error && (

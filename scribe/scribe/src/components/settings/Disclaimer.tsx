@@ -40,7 +40,7 @@ export const Disclaimer = () => {
   }, [displayText, isTyping, fullText]);
 
   return (
-    <div className="flex items-center justify-between py-4 px-4">
+    <div className="flex items-center justify-between w-full">
       {/* Left: bug link */}
       <div className="flex flex-row items-center gap-2">
         <a

@@ -91,6 +91,11 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         if let Err(e) = window.emit("toggle-window-visibility", *is_hidden) {
             eprintln!("Failed to emit toggle-window-visibility event: {}", e);
         }
+        // When showing (is_hidden=false), bring window to front so user can see it
+        if !*is_hidden {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
         return;
     }
 
@@ -202,8 +207,6 @@ pub fn update_shortcuts<R: Runtime>(
     app: AppHandle<R>,
     config: ShortcutsConfig,
 ) -> Result<(), String> {
-    eprintln!("Updating shortcuts with {} bindings", config.bindings.len());
-    
     let mut shortcuts_to_register = Vec::new();
     
     for (action_id, binding) in &config.bindings {
@@ -230,7 +233,6 @@ pub fn update_shortcuts<R: Runtime>(
     for (action_id, shortcut_str, shortcut) in shortcuts_to_register {
         match app.global_shortcut().register(shortcut.clone()) {
             Ok(_) => {
-                eprintln!("Registered shortcut: {} -> {}", action_id, shortcut_str);
                 successfully_registered.insert(action_id, shortcut_str);
             }
             Err(e) => {
@@ -271,9 +273,7 @@ fn unregister_all_shortcuts<R: Runtime>(app: &AppHandle<R>) -> Result<(), String
     for (action_id, shortcut_str) in registered.iter() {
         if let Ok(shortcut) = shortcut_str.parse::<Shortcut>() {
             match app.global_shortcut().unregister(shortcut) {
-                Ok(_) => {
-                    eprintln!("Unregistered shortcut: {} -> {}", action_id, shortcut_str);
-                }
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("Failed to unregister shortcut {}: {}", shortcut_str, e);
                 }
@@ -308,6 +308,27 @@ pub fn validate_shortcut_key(key: String) -> Result<bool, String> {
             Ok(false)
         }
     }
+}
+
+/// Force the main window to show and focus. Use when the app is stuck hidden.
+#[tauri::command]
+pub fn force_show_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Err("Main window not found".to_string());
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let state = app.state::<WindowVisibility>();
+        let mut is_hidden = state.is_hidden.lock().unwrap();
+        *is_hidden = false;
+        let _ = window.emit("toggle-window-visibility", false);
+    }
+
+    window.show().map_err(|e| format!("Failed to show window: {}", e))?;
+    window.set_focus().map_err(|e| format!("Failed to focus window: {}", e))?;
+
+    Ok(())
 }
 
 /// Tauri command to set app icon visibility in dock/taskbar

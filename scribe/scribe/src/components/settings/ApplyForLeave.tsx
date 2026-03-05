@@ -185,7 +185,7 @@ export const ApplyForLeave = () => {
     <div id="apply-for-leave" className="space-y-3">
       <Header
         title="Apply for leave"
-        description="Submit your time-off request directly from Scribe."
+        description="Submit your time-off request directly from Ghost."
         isMainTitle
       />
 

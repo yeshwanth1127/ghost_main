@@ -5,7 +5,8 @@ pub async fn health_check() -> impl IntoResponse {
     tracing::info!("💚 Health check request received");
     Json(json!({
         "status": "ok",
-        "service": "ghost-api"
+        "service": "ghost-api",
+        "gateway": true
     }))
 }
 

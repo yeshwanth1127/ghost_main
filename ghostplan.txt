@@ -1,0 +1,51 @@
+1. Tool execution and permissions
+Moltbot
+Execution tickets: One state machine per tool call in SQLite (ExecutionTicket: pending → permission → running → completed/failed). Restart-safe, auditable.
+Tool intent canonicalization: Each tool request is turned into a structured ToolIntent (humanReadable, goalAlignment, riskFactors, irreversible) for permissions, UI, and auditing.
+Permission flow: Tool request → create ticket → permission (or auto-approval) → execute → result; run suspends until permission is granted, then resumes with the tool result.
+Auto-approval: Low-risk tools can be auto-approved by policy.
+Ghost
+Tool execution is inline in the Pi run loop (Executor runs capability, no separate ticket DB).
+Permission/input dialogs exist (reply_permission, reply_input), but there is no execution-ticket layer, no canonical intent per tool call, and no formal suspend/resume model for “wait for permission, then continue with result.”
+So Moltbot is better here: clearer lifecycle per tool call, safer restarts, and a proper permission/suspend/resume story.
+2. Capability model and risk
+Moltbot
+Capability variants: e.g. filesystem.write has create / overwrite / patch with different risk levels and schemas; process.spawn has a defined variant.
+Registry exposes variants to the LLM and ties them to permission/risk.
+Tool → capability mapping: Raw tool names (e.g. write, bash) are mapped to capabilities (e.g. filesystem.write, process.spawn) and variants.
+Ghost
+Capabilities (e.g. filesystem read/write, process spawn) exist but no variant system (no create vs overwrite vs patch with different risk/schemas).
+Less structure for “this exact kind of write is higher risk” and for surfacing that in permissions/UI.
+So Moltbot is better here: finer-grained capabilities and risk, and a clearer path from tool call → capability → permission/audit.
+3. What the user sees (response policy)
+Moltbot
+Response policy: Configurable visibility (collapse steps, hide tool names, show “action” instead of “write”, hide execution details, error summarization, debug mode). Same events, different presentation for different audiences.
+Ghost
+CognitiveDebugConsole and run state are visible when a Pi run is selected, but there’s no policy layer to hide or rename tool/capability details or to collapse steps for a “clean” UX.
+So Moltbot is better here: one event stream, many possible UX/terminology policies.
+4. Scale and surface area
+Moltbot
+Channels: Discord, Slack, Telegram, Signal, WhatsApp, Line, iMessage, etc., with channel-specific tool hints and capabilities.
+Session/routing: Session keys, groups, subagents, channel bindings.
+Plugins and skills: Many skills (e.g. 1password, GitHub, Slack, coding-agent), hooks, bundled extensions (e.g. OpenProse).
+Infra: Daemon, CLI, config, auth profiles, model failover, context-window guard, compaction.
+Apps: Desktop/mobile (e.g. Swift, Kotlin) in addition to Node gateway.
+Ghost
+Single scribe frontend (Tauri + React), one scribe-api (Rust) with gateway + REST. No multi-channel, no plugins/skills ecosystem, no daemon/CLI for the agent.
+So Moltbot is better here: it’s a full product with many channels and extensions; Ghost is a focused single-app agent.
+5. Pi / agent runtime
+Moltbot
+Uses external Pi stack (@mariozechner/pi-agent-core, pi-ai, pi-coding-agent): session management, compaction, tool definitions, streaming.
+Run suspension: When a tool needs permission, the run is suspended; when the execution ticket completes, a TOOL_EXECUTED (or similar) event triggers resume and the agent continues with the tool result.
+Session file, history limits, context window, model selection, and (where used) OpenProse-style orchestration.
+Ghost
+Custom Pi-style loop in Tauri (observe → decide with one Ollama planner → execute capability → events). No external Pi packages, no suspend/resume tied to a ticket DB.
+Simpler and self-contained, but less reuse of a battle-tested Pi stack and no first-class “suspend on permission, resume on result” model.
+So Moltbot is better here in terms of a mature, external Pi stack and a clear suspend/resume model; Ghost is better in terms of simplicity and single-binary control.
+6. Memory and intent
+Moltbot
+Memory manager: Search over past intents/outcomes (e.g. embeddings, Gemini), used by memory-enhanced intent to enrich the current tool intent with similar past actions.
+Intent canonicalization can therefore be informed by history, not only by the current raw intent.
+Ghost
+No agent-scoped memory/search; no “similar past intents” for permissions or planning. Belief state and run state are in-memory (and event replay), not a separate memory index.
+So Moltbot is better here: memory-backed intent and (optionally) richer permission/audit context.

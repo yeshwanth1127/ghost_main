@@ -5,13 +5,13 @@ edition = "2021"
 
 [dependencies]
 # Web framework
-axum = { version = "0.7", features = ["macros", "query"] }
+axum = { version = "0.7", features = ["macros", "query", "ws"] }
 tokio = { version = "1.0", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "rust_decimal"] }
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -40,11 +40,23 @@ dotenv = "0.15"
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
+# Random number generation
+rand = "0.8"
+
+# Decimal math for token cost calculations
+rust_decimal = { version = "1.36", features = ["serde"] }
+
 # Redis (for caching/rate limiting)
 redis = { version = "0.24", features = ["tokio-comp"] }
 
 # Base64 encoding
 base64 = "0.22"
+
+# Home dir for ghost state (~/.ghost)
+dirs = "5"
+
+# WebSocket (required by axum "ws" feature)
+tokio-tungstenite = "0.28"
 
 [dev-dependencies]
 # Testing

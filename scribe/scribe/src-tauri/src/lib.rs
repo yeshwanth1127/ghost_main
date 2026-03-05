@@ -5,6 +5,7 @@ mod shortcuts;
 mod window;
 mod db;
 mod capture;
+mod screen_context;
 mod assistant;
 mod agent;
 use tauri_plugin_posthog::{init as posthog_init, PostHogConfig, PostHogOptions};
@@ -51,11 +52,12 @@ pub fn run() {
         PathBuf::from("../src-tauri/.env"),        // If running from build directory
     ];
     
-    // Add executable-relative paths
+    // Add executable-relative paths (exe is in target/debug or target/release)
     if let Some(exe_dir) = &exe_dir {
         env_paths.push(exe_dir.join(".env"));
-        env_paths.push(exe_dir.join("..").join("src-tauri").join(".env"));
         env_paths.push(exe_dir.join("..").join(".env"));
+        env_paths.push(exe_dir.join("..").join("..").join("src-tauri").join(".env"));
+        env_paths.push(exe_dir.join("..").join("src-tauri").join(".env"));
     }
     
     // Try each path
@@ -164,9 +166,11 @@ pub fn run() {
         })
         .manage(shortcuts::RegisteredShortcuts::default())
         .manage(agent::r#loop::run_loop::RunManager::new())
+        .manage(agent::capabilities::registry::CapabilityRegistry::new())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_websocket::init())
         .plugin(tauri_plugin_keychain::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_machine_uid::init());
@@ -196,14 +200,17 @@ pub fn run() {
             get_app_version,
             window::set_window_height,
             capture::capture_to_base64,
+            capture::capture_screen_behind_ghost,
             capture::start_screen_capture,
             capture::capture_selected_area,
             capture::close_overlay_window,
+            screen_context::get_active_window_info,
             shortcuts::check_shortcuts_registered,
             shortcuts::get_registered_shortcuts,
             shortcuts::update_shortcuts,
             shortcuts::validate_shortcut_key,
             shortcuts::set_app_icon_visibility,
+            shortcuts::force_show_window,
             shortcuts::set_always_on_top,
             shortcuts::exit_app,
             activate::activate_license_api,
@@ -242,10 +249,16 @@ pub fn run() {
             agent::create_run,
             agent::get_run_state,
             agent::get_run_events,
+            agent::get_belief_state,
             agent::start_run,
             agent::cancel_run,
             agent::cancel_all_runs,
             agent::reply_permission,
+            agent::reply_ask_user,
+            agent::reply_input,
+            agent::cancel_input_request,
+            agent::clear_all_runs,
+            agent::check_ollama,
         ])
         .setup(|app| {
             // Setup main window positioning
@@ -299,6 +312,74 @@ pub fn run() {
             ).expect("Failed to initialize global shortcut plugin");
             if let Err(e) = shortcuts::setup_global_shortcuts(app.handle()) {
                 eprintln!("Failed to setup global shortcuts: {}", e);
+            }
+            
+            // Initialize capability registry with all capabilities
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use std::sync::Arc;
+                
+                let registry = app_handle.state::<agent::capabilities::registry::CapabilityRegistry>();
+                
+                // Register filesystem capabilities
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemRead)).await;
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemWrite)).await;
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemList)).await;
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemExists)).await;
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemDelete)).await;
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemMove)).await;
+                registry.register(Arc::new(agent::capabilities::filesystem::FilesystemMkdir)).await;
+
+                // Register process capabilities
+                registry.register(Arc::new(agent::capabilities::process::ProcessSpawn)).await;
+                registry.register(Arc::new(agent::capabilities::process::ProcessKill)).await;
+                registry.register(Arc::new(agent::capabilities::process::PortKill)).await;
+                registry.register(Arc::new(agent::capabilities::process::ProcessList)).await;
+
+                // Register code capabilities
+                registry.register(Arc::new(agent::capabilities::code::CodeSearch)).await;
+                registry.register(Arc::new(agent::capabilities::code::CodeApplyPatch)).await;
+                registry.register(Arc::new(agent::capabilities::code::CodeModifyBlock)).await;
+
+                // Register project capabilities
+                registry.register(Arc::new(agent::capabilities::project::ProjectInstallDependencies)).await;
+                registry.register(Arc::new(agent::capabilities::project::ProjectBuild)).await;
+                registry.register(Arc::new(agent::capabilities::project::ProjectTest)).await;
+                registry.register(Arc::new(agent::capabilities::project::ProjectRunDevServer)).await;
+
+                // Register http capabilities
+                registry.register(Arc::new(agent::capabilities::http::HttpGet)).await;
+                registry.register(Arc::new(agent::capabilities::http::HttpPost)).await;
+
+                // Register docker capabilities
+                registry.register(Arc::new(agent::capabilities::docker::DockerBuild)).await;
+                registry.register(Arc::new(agent::capabilities::docker::DockerRun)).await;
+                registry.register(Arc::new(agent::capabilities::docker::DockerStop)).await;
+
+                // Register repo capabilities
+                registry.register(Arc::new(agent::capabilities::repo::RepoClone)).await;
+                registry.register(Arc::new(agent::capabilities::repo::RepoDiff)).await;
+                registry.register(Arc::new(agent::capabilities::repo::RepoCommit)).await;
+                registry.register(Arc::new(agent::capabilities::repo::RepoPush)).await;
+
+                // Register env capabilities
+                registry.register(Arc::new(agent::capabilities::env::EnvRead)).await;
+                registry.register(Arc::new(agent::capabilities::env::EnvSet)).await;
+                registry.register(Arc::new(agent::capabilities::env::LogTail)).await;
+
+                eprintln!("Registered {} capabilities", registry.list().await.len());
+            });
+
+            // Precompute intent centroids at startup so first routing request does not pay embed cost
+            #[cfg(feature = "embedding-router")]
+            {
+                tauri::async_runtime::spawn_blocking(|| {
+                    if let Err(e) = agent::router::ensure_intent_centroids_loaded() {
+                        eprintln!("[router] intent centroids preload failed (first request may be slower): {}", e);
+                    } else {
+                        eprintln!("[router] intent centroids preloaded");
+                    }
+                });
             }
             
             // Resume all non-terminal runs on app start

@@ -1,0 +1,5 @@
+torch
+sentence-transformers
+fastapi
+uvicorn
+huggingface_hub

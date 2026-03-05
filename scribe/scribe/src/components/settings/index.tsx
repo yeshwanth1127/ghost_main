@@ -1,5 +1,7 @@
 import { useSettings } from "@/hooks";
 import { SettingsIcon } from "lucide-react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Popover,
   PopoverContent,
@@ -25,9 +27,61 @@ import { SettingsNavigation } from "./SettingsNavigation";
 import { CursorSelection } from "./Cursor";
 import { ApplyForLeave } from "./ApplyForLeave";
 import { ModeToggle } from "./ModeToggle";
+import { UsageDashboard } from "./UsageDashboard";
 
 export const Settings = () => {
   const settings = useSettings();
+  const [userId, setUserId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        // Get stored license key (backend returns without Scribe_ prefix)
+        const result: any = await invoke("secure_storage_get");
+        
+        const licenseKey = result?.license_key;
+        console.log("🔍 License key from storage:", licenseKey ? "found" : "not found");
+        
+        if (!licenseKey) {
+          console.log("❌ No license key found");
+          setUserId(undefined);
+          return;
+        }
+
+        // Fetch user_id from backend
+        console.log("🌐 Fetching user_id from backend...");
+        const response = await fetch('http://localhost:8083/api/v1/auth/get-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ license_key: licenseKey }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log("✅ User ID fetched:", data.user_id);
+          setUserId(data.user_id);
+        } else {
+          console.error("❌ Backend error:", response.status);
+          setUserId(undefined);
+        }
+      } catch (err) {
+        console.error('Failed to fetch user_id:', err);
+        setUserId(undefined);
+      }
+    };
+
+    // Fetch userId when settings popover opens
+    if (settings?.isPopoverOpen) {
+      console.log("📘 Settings popover opened, fetching user_id...");
+      fetchUserId();
+    }
+  }, [settings?.isPopoverOpen]);
+
+  useEffect(() => {
+    console.log("📊 UserId state changed:", userId);
+  }, [userId]);
 
   return (
     <Popover
@@ -49,70 +103,109 @@ export const Settings = () => {
       <PopoverContent
         align="end"
         side="bottom"
-        className="select-none w-screen p-0 border border-input/50 rounded-lg overflow-hidden"
-        sideOffset={8}
+        className="select-none w-[min(896px,calc(100vw-2rem))] max-w-4xl min-h-[70vh] p-0 border border-input/50 rounded-xl overflow-hidden shadow-xl"
+        sideOffset={12}
+        collisionPadding={16}
+        avoidCollisions={true}
       >
-        <ScrollArea className="h-[calc(100vh-9rem)]">
+        <ScrollArea className="h-[calc(100vh-10rem)] min-h-[60vh]">
           <div className="flex min-h-full">
-            <div className="p-6 space-y-6 w-full flex flex-col justify-center">
+            <div className="p-6 w-full flex flex-col divide-y divide-input/30">
             {/* Settings Navigation */}
-            <SettingsNavigation />
+            <section className="pt-0 pb-5">
+              <SettingsNavigation />
+            </section>
 
-            {/* Scribe API Setup */}
-            <ScribeApiSetup />
+            {/* Usage & Billing Dashboard */}
+            <section className="py-5">
+              <UsageDashboard userId={userId} />
+            </section>
+
+            {/* Ghost API Setup */}
+            <section className="py-5">
+              <ScribeApiSetup />
+            </section>
 
             {/* Provider Selection */}
-            <AIProviders {...settings} />
+            <section className="py-5">
+              <AIProviders {...settings} />
+            </section>
 
             {/* STT Providers */}
-            <STTProviders {...settings} />
+            <section className="py-5">
+              <STTProviders {...settings} />
+            </section>
 
             {/* System Prompt */}
-            <SystemPrompt {...settings} />
+            <section className="py-5">
+              <SystemPrompt {...settings} />
+            </section>
 
             {/* Theme */}
-            <Theme />
+            <section className="py-5">
+              <Theme />
+            </section>
 
             {/* Screenshot Configs */}
-            <ScreenshotConfigs {...settings} />
+            <section className="py-5">
+              <ScreenshotConfigs {...settings} />
+            </section>
 
             {/* Cursor Selection */}
-            <CursorSelection />
+            <section className="py-5">
+              <CursorSelection />
+            </section>
 
             {/* Mode Toggle */}
-            <ModeToggle />
+            <section className="py-5">
+              <ModeToggle />
+            </section>
 
             {/* Keyboard Shortcuts */}
-            <ShortcutManager />
+            <section className="py-5">
+              <ShortcutManager />
+            </section>
 
             {/* Audio Selection */}
-            <AudioSelection />
+            <section className="py-5">
+              <AudioSelection />
+            </section>
 
             {/* Autostart Toggle */}
-            <AutostartToggle />
+            <section className="py-5">
+              <AutostartToggle />
+            </section>
 
             {/* App Icon Toggle */}
-            <AppIconToggle />
+            <section className="py-5">
+              <AppIconToggle />
+            </section>
 
             {/* Always On Top Toggle */}
-            <AlwaysOnTopToggle />
+            <section className="py-5">
+              <AlwaysOnTopToggle />
+            </section>
 
             {/* Title Toggle */}
-            <TitleToggle />
+            <section className="py-5">
+              <TitleToggle />
+            </section>
 
             {/* Delete Chat History */}
-            <DeleteChats {...settings} />
+            <section className="py-5">
+              <DeleteChats {...settings} />
+            </section>
 
             {/* Apply for Leave */}
-            <ApplyForLeave />
+            <section className="py-5 pb-0">
+              <ApplyForLeave />
+            </section>
             </div>
           </div>
-
-          {/* Footer attribution removed as requested */}
         </ScrollArea>
 
         {/* Footer always visible at the bottom */}
-        <div className="border-t border-input/50 px-6 py-4 bg-background">
+        <div className="border-t border-input/30 px-6 py-4 bg-background">
           <Disclaimer />
         </div>
       </PopoverContent>

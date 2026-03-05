@@ -21,6 +21,10 @@ export interface ChatConversation {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  /** Model used for this conversation (e.g. "ollama/llama3") */
+  modelUsed?: string | null;
+  /** Total tokens used (if tracked) */
+  totalTokens?: number | null;
 }
 
 export interface CompletionState {

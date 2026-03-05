@@ -127,32 +127,64 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     safeLocalStorage.getItem(STORAGE_KEYS.Scribe_API_ENABLED) === "true"
   );
 
-  const getActiveLicenseStatus = async () => {
-    const response: { is_active: boolean } = await invoke(
-      "validate_license_api"
-    );
-    setHasActiveLicense(response.is_active);
+  const ensureInstanceIdForStoredLicense = async () => {
     try {
-      const storage = await invoke<{ license_key?: string }>(
+      const storage = await invoke<{ license_key?: string; instance_id?: string }>(
         "secure_storage_get"
       );
-      const licenseKey = storage?.license_key || "";
-      if (!response.is_active && licenseKey.startsWith("TRIAL-")) {
-        setTrialExpired(true);
-      } else {
-        setTrialExpired(false);
+
+      if (storage?.license_key && !storage?.instance_id) {
+        const generatedInstanceId = `${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 11)}`;
+
+        await invoke("secure_storage_save", {
+          items: [{ key: "Scribe_instance_id", value: generatedInstanceId }],
+        });
+
+        console.log("🛠️ Repaired missing instance_id for stored license");
       }
-    } catch {}
-    // Check if the auto configs are enabled
-    const autoConfigsEnabled = localStorage.getItem("auto-configs-enabled");
-    if (response.is_active && !autoConfigsEnabled) {
-      setScreenshotConfiguration({
-        mode: "auto",
-        autoPrompt: "Analyze the screenshot and provide insights",
-        enabled: false,
-      });
-      // Set the flag to true so that we don't change the mode again
-      localStorage.setItem("auto-configs-enabled", "true");
+    } catch (error) {
+      console.debug("Failed to repair missing instance_id:", error);
+    }
+  };
+
+  const getActiveLicenseStatus = async () => {
+    try {
+      await ensureInstanceIdForStoredLicense();
+
+      const response: { is_active: boolean } = await invoke(
+        "validate_license_api"
+      );
+      setHasActiveLicense(response.is_active);
+
+      try {
+        const storage = await invoke<{ license_key?: string }>(
+          "secure_storage_get"
+        );
+        const licenseKey = storage?.license_key || "";
+        if (!response.is_active && licenseKey.startsWith("TRIAL-")) {
+          setTrialExpired(true);
+        } else {
+          setTrialExpired(false);
+        }
+      } catch {}
+
+      // Check if the auto configs are enabled
+      const autoConfigsEnabled = localStorage.getItem("auto-configs-enabled");
+      if (response.is_active && !autoConfigsEnabled) {
+        setScreenshotConfiguration({
+          mode: "auto",
+          autoPrompt: "Analyze the screenshot and provide insights",
+          enabled: false,
+        });
+        // Set the flag to true so that we don't change the mode again
+        localStorage.setItem("auto-configs-enabled", "true");
+      }
+    } catch (error) {
+      console.warn("Failed to validate license status:", error);
+      setHasActiveLicense(false);
+      setTrialExpired(false);
     }
   };
 
@@ -210,7 +242,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       STORAGE_KEYS.SELECTED_AI_PROVIDER
     );
     if (savedSelectedAi) {
-      setSelectedAIProvider(JSON.parse(savedSelectedAi));
+      let parsed = JSON.parse(savedSelectedAi);
+      // Migrate ollama → exora (Exora AI is the single Ollama-connected provider)
+      if (parsed?.provider === "ollama") {
+        parsed = { ...parsed, provider: "exora" };
+        safeLocalStorage.setItem(
+          STORAGE_KEYS.SELECTED_AI_PROVIDER,
+          JSON.stringify(parsed)
+        );
+      }
+      // Migrate deprecated llama3.2 to llama3:latest for Exora AI
+      if (
+        parsed?.provider === "exora" &&
+        parsed?.variables?.model === "llama3.2"
+      ) {
+        parsed = {
+          ...parsed,
+          variables: { ...parsed.variables, model: "llama3:latest" },
+        };
+        safeLocalStorage.setItem(
+          STORAGE_KEYS.SELECTED_AI_PROVIDER,
+          JSON.stringify(parsed)
+        );
+      }
+      setSelectedAIProvider(parsed);
+    } else {
+      // Default to Exora AI (Ollama) when no provider is saved
+      setSelectedAIProvider({
+        provider: "exora",
+        variables: { model: "llama3:latest" },
+      });
     }
 
     // Load selected STT provider
@@ -330,6 +391,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         } else {
           // Not first launch, validate existing license
           console.log("Not first launch, validating existing license...");
+          await ensureInstanceIdForStoredLicense();
           await getActiveLicenseStatus();
         }
 
@@ -351,7 +413,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           toString: error?.toString(),
         });
         // Fall back to normal flow
-        await getActiveLicenseStatus();
+        try {
+          await ensureInstanceIdForStoredLicense();
+          await getActiveLicenseStatus();
+        } catch (fallbackError) {
+          console.warn("Fallback license status check failed:", fallbackError);
+          setHasActiveLicense(false);
+          setTrialExpired(false);
+        }
       }
     };
     

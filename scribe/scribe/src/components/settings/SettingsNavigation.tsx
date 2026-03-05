@@ -1,7 +1,7 @@
 import { Button } from "@/components";
 
 const SETTINGS_SECTIONS = [
-  { id: "Scribe-api", label: "Scribe access" },
+  { id: "Scribe-api", label: "Ghost access" },
   { id: "system-prompt", label: "System prompt" },
   { id: "theme", label: "Theme" },
   { id: "screenshot", label: "Screenshot config" },
@@ -30,8 +30,8 @@ export const SettingsNavigation = () => {
   };
 
   return (
-    <div className="space-y-1 -mt-2">
-      <p className="text-xs text-muted-foreground">Quick Jump to:</p>
+    <div className="space-y-3">
+      <p className="text-sm font-medium text-foreground">Quick Jump to:</p>
       <div className="flex flex-wrap items-center gap-2">
         {SETTINGS_SECTIONS.map((section) => {
           return (
@@ -40,10 +40,10 @@ export const SettingsNavigation = () => {
               size="sm"
               variant="outline"
               onClick={() => scrollToSection(section.id)}
-              className="h-fit px-2 py-1"
+              className="h-8 px-3 text-xs"
               title={`Jump to ${section.label} section`}
             >
-              <span className="text-[10px]">{section.label}</span>
+              {section.label}
             </Button>
           );
         })}

@@ -2,10 +2,12 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useWindowResize } from "./useWindow";
 import { useGlobalShortcuts } from "@/hooks";
 import { DEFAULT_SYSTEM_PROMPT, MAX_FILES } from "@/config";
+import { GHOST_CAPABILITIES_DISPLAY } from "@/config/ghost-capabilities";
 import { useApp } from "@/contexts";
 import {
   fetchAIResponse,
   saveConversation,
+  stripReasoningFromContent,
   getConversationById,
   generateConversationTitle,
   shouldUseScribeAPI,
@@ -13,7 +15,12 @@ import {
   generateConversationId,
   generateMessageId,
   generateRequestId,
+  trimHistoryToContextWindow,
+  getFactsForConversation,
+  isScreenContentQuery,
 } from "@/lib";
+import { recordUsageFromClient } from "@/lib/usage-api";
+import { CHARS_PER_TOKEN_ESTIMATE } from "@/lib/chat-constants";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useActionAssistant } from "./useActionAssistant";
@@ -67,6 +74,19 @@ interface LeaveApplicationContext {
   attachments: AttachedFile[];
 }
 
+/** Normalize API errors to user-friendly messages (e.g. usage limit) */
+function normalizeErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes("token limit exceeded") ||
+    lower.includes("usage limit") ||
+    lower.includes("402")
+  ) {
+    return "You reached your monthly AI usage limit.";
+  }
+  return raw;
+}
+
 export const useCompletion = () => {
   const {
     selectedAIProvider,
@@ -101,7 +121,6 @@ export const useCompletion = () => {
   const [isScreenshotLoading, setIsScreenshotLoading] = useState(false);
   const [keepEngaged, setKeepEngaged] = useState(false);
   const [responseOpen, setResponseOpen] = useState(false);
-  const [rawStreamLines, setRawStreamLines] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const isProcessingScreenshotRef = useRef(false);
   const screenshotConfigRef = useRef(screenshotConfiguration);
@@ -196,6 +215,56 @@ export const useCompletion = () => {
     []
   );
 
+  /** Persist user message immediately so we don't lose the turn on crash/close. Returns conversationId used. */
+  const saveUserMessageOnly = useCallback(
+    async (userMessage: string): Promise<string> => {
+      if (!userMessage?.trim()) return state.currentConversationId ?? "";
+      const conversationId =
+        state.currentConversationId || generateConversationId("chat");
+      const timestamp = Date.now();
+      const userMsg: ChatMessage = {
+        id: generateMessageId("user", timestamp),
+        role: "user",
+        content: userMessage.trim(),
+        timestamp,
+      };
+      const newMessages = [...state.conversationHistory, userMsg];
+      let existingConversation: ChatConversation | null = null;
+      if (state.currentConversationId) {
+        try {
+          existingConversation = await getConversationById(
+            state.currentConversationId
+          );
+        } catch {
+          // ignore
+        }
+      }
+      const title =
+        state.conversationHistory.length === 0
+          ? generateConversationTitle(userMessage)
+          : existingConversation?.title ?? generateConversationTitle(userMessage);
+      const conversation: ChatConversation = {
+        id: conversationId,
+        title,
+        messages: newMessages,
+        createdAt: existingConversation?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+      try {
+        await saveConversation(conversation);
+        setState((prev) => ({
+          ...prev,
+          currentConversationId: conversationId,
+        }));
+        return conversationId;
+      } catch (err) {
+        console.error("Failed to save user message:", err);
+        return conversationId;
+      }
+    },
+    [state.currentConversationId, state.conversationHistory]
+  );
+
   const submit = useCallback(
     async (
       options?:
@@ -222,7 +291,6 @@ export const useCompletion = () => {
       if (!input.trim()) {
         return;
       }
-      setRawStreamLines([]);
       setResponseOpen(true);
 
       if (speechText && !inputOverride) {
@@ -292,25 +360,7 @@ export const useCompletion = () => {
       const signal = abortControllerRef.current.signal;
 
       try {
-        // Prepare message history for the AI
-        const messageHistory = state.conversationHistory.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-        }));
-
-        // Handle image attachments
-        const imagesBase64: string[] = [];
-        if (attachments.length > 0) {
-          attachments.forEach((file) => {
-            if (file.type.startsWith("image/")) {
-              imagesBase64.push(file.base64);
-            }
-          });
-        }
-
-        let fullResponse = "";
-
-        const useScribeAPI = await shouldUseScribeAPI();
+        const useScribeAPI = await shouldUseScribeAPI(selectedAIProvider);
         // Check if AI provider is configured
         if (!selectedAIProvider.provider && !useScribeAPI) {
           setState((prev) => ({
@@ -331,6 +381,54 @@ export const useCompletion = () => {
           return;
         }
 
+        // Save user message immediately so we don't lose the turn on crash/close
+        const conversationIdUsed = await saveUserMessageOnly(input);
+
+        // Context window: trim history to message count + token budget
+        const trimmedHistory = trimHistoryToContextWindow(state.conversationHistory);
+        const messageHistory = trimmedHistory.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+
+        // Semantic memory: inject stored facts into system prompt
+        const facts =
+          conversationIdUsed ? await getFactsForConversation(conversationIdUsed) : {};
+        const factsEntries = Object.entries(facts);
+        const systemPromptWithFacts =
+          factsEntries.length > 0
+            ? (effectiveSystemPrompt || "") +
+              "\n\nStored facts for this conversation: " +
+              factsEntries.map(([k, v]) => `${k}: ${v}`).join("; ")
+            : effectiveSystemPrompt || undefined;
+
+        // Handle image attachments
+        const imagesBase64: string[] = [];
+
+        // When user asks about screen content (e.g. "answer the question on my screen"),
+        // auto-capture what's behind Ghost (hides Ghost, captures, restores) so the AI sees
+        // the content (e.g. Cursor, a test) rather than Ghost itself.
+        if (isScreenContentQuery(input)) {
+          try {
+            const screenBase64 = await invoke<string>("capture_screen_behind_ghost");
+            if (screenBase64) {
+              imagesBase64.push(screenBase64);
+            }
+          } catch (e) {
+            console.warn("[useCompletion] Screen capture failed:", e);
+          }
+        }
+
+        if (attachments.length > 0) {
+          attachments.forEach((file) => {
+            if (file.type.startsWith("image/")) {
+              imagesBase64.push(file.base64);
+            }
+          });
+        }
+
+        let fullResponse = "";
+
         // Clear previous response and set loading state
         setState((prev) => ({
           ...prev,
@@ -345,20 +443,22 @@ export const useCompletion = () => {
             attachments: attachments.length,
             useScribeAPI,
             provider: useScribeAPI ? "scribe" : provider?.id,
+            conversationId: conversationIdUsed,
           });
           // Use the fetchAIResponse function with signal
           for await (const chunk of fetchAIResponse({
             provider: useScribeAPI ? undefined : provider,
             selectedProvider: selectedAIProvider,
-            systemPrompt: effectiveSystemPrompt || undefined,
+            systemPrompt: systemPromptWithFacts,
             history: messageHistory,
             userMessage: input,
             imagesBase64,
             signal,
           })) {
-            console.log("[useCompletion] chunk", {
+            console.log("[useCompletion] ✅ Received chunk from generator:", {
               length: chunk.length,
               preview: chunk.slice(0, 80),
+              currentResponseLength: fullResponse.length,
             });
             // Only update if this is still the current request
             if (currentRequestIdRef.current !== requestId) {
@@ -371,20 +471,31 @@ export const useCompletion = () => {
             }
 
             fullResponse += chunk;
-            setState((prev) => ({
-              ...prev,
-              response: prev.response + chunk,
-            }));
+            setState((prev) => {
+              const accumulated = prev.response + chunk;
+              const stripped = stripReasoningFromContent(accumulated);
+              console.log("[useCompletion] 📝 Updating UI state:", {
+                accumulatedLength: accumulated.length,
+                strippedLength: stripped.length,
+                chunkLength: chunk.length,
+                newResponse: stripped.slice(0, 50),
+                prevResponse: prev.response.slice(0, 50),
+              });
+              return {
+                ...prev,
+                response: stripped,
+              };
+            });
           }
         } catch (e: any) {
           // Only show error if this is still the current request and not aborted
           if (currentRequestIdRef.current === requestId && !signal.aborted) {
             console.error("[useCompletion] Error in fetchAIResponse:", e);
-            const errorMessage = e?.message || e?.toString() || "An error occurred";
+            const raw = e?.message || e?.toString() || "An error occurred";
             setState((prev) => ({
               ...prev,
               isLoading: false,
-              error: errorMessage,
+              error: normalizeErrorMessage(raw),
               response: "", // Clear response on error
             }));
           }
@@ -396,29 +507,72 @@ export const useCompletion = () => {
           return;
         }
 
-        setState((prev) => ({ ...prev, isLoading: false }));
+        setState((prev) => {
+          console.log("[useCompletion] Before setting isLoading=false:", {
+            currentResponse: prev.response.slice(0, 80),
+            currentResponseLength: prev.response.length,
+          });
+          return { ...prev, isLoading: false };
+        });
         console.log("[useCompletion] completed", {
           fullResponseLength: fullResponse.length,
+          fullResponsePreview: fullResponse.slice(0, 80),
         });
 
-        // Focus input after AI response is complete
-        setTimeout(() => {
-          inputRef.current?.focus();
-        }, 100);
+        // Don't focus input here - it steals focus from the response panel and can
+        // cause the popover to close, clearing the response immediately
 
-        // Save the conversation after successful completion
+        // Save the conversation after successful completion (use stripped response)
         if (fullResponse) {
+          const cleanedResponse = stripReasoningFromContent(fullResponse) || fullResponse;
           await saveCurrentConversation(
             input,
-            fullResponse,
+            cleanedResponse,
             attachments
           );
 
-          if (leaveApplicationRef.current) {
-            const context = leaveApplicationRef.current;
-            leaveApplicationRef.current = null;
-            await submitLeaveApplicationToApi(context, fullResponse);
+          // Record usage for direct providers (Scribe API records its own)
+          if (!useScribeAPI && selectedAIProvider?.provider) {
+            try {
+              const storage = await invoke<{ license_key?: string }>("secure_storage_get");
+              if (storage?.license_key) {
+                const promptChars =
+                  (systemPromptWithFacts?.length || 0) +
+                  messageHistory.reduce((sum, m) => sum + (m.content?.length || 0), 0) +
+                  input.length;
+                const promptTokens = Math.max(1, Math.ceil(promptChars / CHARS_PER_TOKEN_ESTIMATE));
+                const completionTokens = Math.max(1, Math.ceil(cleanedResponse.length / CHARS_PER_TOKEN_ESTIMATE));
+                const model = selectedAIProvider.variables?.model || "unknown";
+                const provider = selectedAIProvider.provider || "exora";
+                console.log("[useCompletion] Recording usage:", {
+                  provider,
+                  model,
+                  promptTokens,
+                  completionTokens,
+                  promptChars,
+                  responseChars: cleanedResponse.length,
+                });
+                await recordUsageFromClient(
+                  storage.license_key,
+                  model,
+                  provider,
+                  promptTokens,
+                  completionTokens
+                );
+              } else {
+                console.warn("[useCompletion] No license key - usage not recorded. Register to track usage.");
+              }
+            } catch (e) {
+              console.warn("[useCompletion] Failed to record usage:", e);
+            }
           }
+
+          const context = leaveApplicationRef.current;
+          if (context) {
+            await submitLeaveApplicationToApi(context, cleanedResponse);
+            leaveApplicationRef.current = null;
+          }
+
           // Clear input and attached files after saving
           setState((prev) => ({
             ...prev,
@@ -430,9 +584,10 @@ export const useCompletion = () => {
         leaveApplicationRef.current = null;
         // Only show error if not aborted
         if (!signal?.aborted && currentRequestIdRef.current === requestId) {
+          const raw = error instanceof Error ? error.message : "An error occurred";
           setState((prev) => ({
             ...prev,
-            error: error instanceof Error ? error.message : "An error occurred",
+            error: normalizeErrorMessage(raw),
             isLoading: false,
           }));
         }
@@ -446,6 +601,7 @@ export const useCompletion = () => {
       effectiveSystemPrompt,
       state.conversationHistory,
       submitLeaveApplicationToApi,
+      saveUserMessageOnly,
     ]
   );
 
@@ -456,7 +612,6 @@ export const useCompletion = () => {
     }
     currentRequestIdRef.current = null;
     setResponseOpen(false);
-    setRawStreamLines([]);
     setState((prev) => ({ ...prev, isLoading: false }));
   }, []);
 
@@ -467,7 +622,6 @@ export const useCompletion = () => {
     }
     cancel();
     setResponseOpen(false);
-    setRawStreamLines([]);
     setState((prev) => ({
       ...prev,
       input: "",
@@ -489,9 +643,6 @@ export const useCompletion = () => {
       reader.onerror = reject;
     });
   }, []);
-
-  // Note: saveConversation, getConversationById, and generateConversationTitle
-  // are now imported from lib/database/chat-history.action.ts
 
   const loadConversation = useCallback((conversation: ChatConversation) => {
     setState((prev) => ({
@@ -568,12 +719,18 @@ export const useCompletion = () => {
           : existingConversation?.title ||
             generateConversationTitle(userMessage);
 
+      const modelUsed =
+        selectedAIProvider?.provider != null
+          ? `${selectedAIProvider.provider}/${selectedAIProvider?.variables?.model ?? "default"}`
+          : undefined;
+
       const conversation: ChatConversation = {
         id: conversationId,
         title,
         messages: newMessages,
         createdAt: existingConversation?.createdAt || timestamp,
         updatedAt: timestamp,
+        modelUsed: modelUsed ?? null,
       };
 
       try {
@@ -593,8 +750,68 @@ export const useCompletion = () => {
         }));
       }
     },
-    [state.currentConversationId, state.conversationHistory]
+    [
+      state.currentConversationId,
+      state.conversationHistory,
+      selectedAIProvider,
+    ]
   );
+
+  const showCapabilities = useCallback(async () => {
+    const conversationId =
+      state.currentConversationId || generateConversationId("chat");
+    const timestamp = Date.now();
+    const userMsg: ChatMessage = {
+      id: generateMessageId("user", timestamp),
+      role: "user",
+      content: "What can Ghost do?",
+      timestamp,
+    };
+    const assistantMsg: ChatMessage = {
+      id: generateMessageId("assistant", timestamp + MESSAGE_ID_OFFSET),
+      role: "assistant",
+      content: GHOST_CAPABILITIES_DISPLAY,
+      timestamp: timestamp + MESSAGE_ID_OFFSET,
+    };
+    const newMessages = [...state.conversationHistory, userMsg, assistantMsg];
+    let existingConversation = null;
+    if (state.currentConversationId) {
+      try {
+        existingConversation = await getConversationById(
+          state.currentConversationId
+        );
+      } catch {
+        // ignore
+      }
+    }
+    const title =
+      state.conversationHistory.length === 0
+        ? "What can Ghost do?"
+        : existingConversation?.title ?? "What can Ghost do?";
+    const conversation: ChatConversation = {
+      id: conversationId,
+      title,
+      messages: newMessages,
+      createdAt: existingConversation?.createdAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    try {
+      await saveConversation(conversation);
+      setState((prev) => ({
+        ...prev,
+        currentConversationId: conversationId,
+        conversationHistory: newMessages,
+        response: "",
+        error: null,
+      }));
+    } catch (error) {
+      console.error("Failed to save capabilities message:", error);
+      setState((prev) => ({
+        ...prev,
+        error: "Failed to show capabilities. Please try again.",
+      }));
+    }
+  }, [state.currentConversationId, state.conversationHistory]);
 
   // Listen for conversation events from the main ChatHistory component
   useEffect(() => {
@@ -773,15 +990,7 @@ export const useCompletion = () => {
           const signal = abortControllerRef.current.signal;
 
           try {
-            // Prepare message history for the AI
-            const messageHistory = state.conversationHistory.map((msg) => ({
-              role: msg.role,
-              content: msg.content,
-            }));
-
-            let fullResponse = "";
-
-            const useScribeAPI = await shouldUseScribeAPI();
+            const useScribeAPI = await shouldUseScribeAPI(selectedAIProvider);
             // Check if AI provider is configured
             if (!selectedAIProvider.provider && !useScribeAPI) {
               setState((prev) => ({
@@ -802,6 +1011,29 @@ export const useCompletion = () => {
               return;
             }
 
+            const trimmedHistory = trimHistoryToContextWindow(
+              state.conversationHistory
+            );
+            const messageHistory = trimmedHistory.map((msg) => ({
+              role: msg.role,
+              content: msg.content,
+            }));
+
+            const conversationIdForFacts =
+              state.currentConversationId || "";
+            const facts = conversationIdForFacts
+              ? await getFactsForConversation(conversationIdForFacts)
+              : {};
+            const factsEntries = Object.entries(facts);
+            const systemPromptWithFacts =
+              factsEntries.length > 0
+                ? (effectiveSystemPrompt || "") +
+                  "\n\nStored facts for this conversation: " +
+                  factsEntries.map(([k, v]) => `${k}: ${v}`).join("; ")
+                : effectiveSystemPrompt || undefined;
+
+            let fullResponse = "";
+
             // Clear previous response and set loading state
             setState((prev) => ({
               ...prev,
@@ -815,7 +1047,7 @@ export const useCompletion = () => {
             for await (const chunk of fetchAIResponse({
               provider: useScribeAPI ? undefined : provider,
               selectedProvider: selectedAIProvider,
-              systemPrompt: effectiveSystemPrompt || undefined,
+              systemPrompt: systemPromptWithFacts,
               history: messageHistory,
               userMessage: prompt,
               imagesBase64: [base64],
@@ -827,10 +1059,13 @@ export const useCompletion = () => {
               }
 
               fullResponse += chunk;
-              setState((prev) => ({
-                ...prev,
-                response: prev.response + chunk,
-              }));
+              setState((prev) => {
+                const accumulated = prev.response + chunk;
+                return {
+                  ...prev,
+                  response: stripReasoningFromContent(accumulated),
+                };
+              });
             }
 
             // Only proceed if this is still the current request
@@ -845,9 +1080,10 @@ export const useCompletion = () => {
               inputRef.current?.focus();
             }, 100);
 
-            // Save the conversation after successful completion
+            // Save the conversation after successful completion (use stripped response)
             if (fullResponse) {
-              await saveCurrentConversation(prompt, fullResponse, [
+              const cleanedResponse = stripReasoningFromContent(fullResponse) || fullResponse;
+              await saveCurrentConversation(prompt, cleanedResponse, [
                 attachedFile,
               ]);
               // Clear input after saving
@@ -860,10 +1096,10 @@ export const useCompletion = () => {
             // Only show error if this is still the current request and not aborted
             if (currentRequestIdRef.current === requestId && !signal.aborted) {
               console.error("[useCompletion] Error in screenshot AI response:", e);
-              const errorMessage = e?.message || e?.toString() || "An error occurred";
+              const raw = e?.message || e?.toString() || "An error occurred";
               setState((prev) => ({
                 ...prev,
-                error: errorMessage,
+                error: normalizeErrorMessage(raw),
                 response: "", // Clear response on error
               }));
             }
@@ -917,7 +1153,7 @@ export const useCompletion = () => {
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.repeat) {
       e.preventDefault();
       if (!state.isLoading && state.input.trim()) {
         submit();
@@ -1041,27 +1277,6 @@ export const useCompletion = () => {
     window.addEventListener("keydown", handleToggleShortcut);
     return () => window.removeEventListener("keydown", handleToggleShortcut);
   }, [isPopoverOpen]);
-
-  // Debug: capture raw SSE lines from backend
-  useEffect(() => {
-    let unlisten: any;
-    const setupListener = async () => {
-      unlisten = await listen("chat_stream_raw_line", (event: any) => {
-        const line = String(event?.payload ?? "").trim();
-        if (!line) return;
-        setRawStreamLines((prev) => {
-          const next = [...prev, line];
-          return next.length > 20 ? next.slice(-20) : next;
-        });
-      });
-    };
-    setupListener();
-    return () => {
-      if (unlisten) {
-        unlisten();
-      }
-    };
-  }, []);
 
   const captureScreenshot = useCallback(async () => {
     if (!handleScreenshotSubmit) return;
@@ -1255,6 +1470,6 @@ export const useCompletion = () => {
     isScreenshotLoading,
     keepEngaged,
     setKeepEngaged,
-    rawStreamLines,
+    showCapabilities,
   };
 };

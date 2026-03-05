@@ -1,6 +1,6 @@
 // Run store - database operations for runs and events
 
-use crate::agent::events::{RunEvent, RUN_CREATED};
+use crate::agent::events::{RunEvent, RUN_CREATED, RUN_STATUS_CHANGED};
 use crate::agent::state::run_state::*;
 use crate::agent::state::RunState;
 use chrono::Utc;
@@ -62,6 +62,7 @@ pub async fn append_event(
     event_type: &str,
     payload: serde_json::Value,
 ) -> Result<RunEvent, String> {
+    eprintln!("[store] append_event start run_id={} event_type={}", run_id, event_type);
     let now = Utc::now();
 
     // Insert event into database
@@ -69,6 +70,7 @@ pub async fn append_event(
     let created_at_str = now.to_rfc3339();
     let instances = app.state::<DbInstances>();
     let instances_guard = instances.inner().0.read().await;
+    eprintln!("[store] append_event lock acquired run_id={}", run_id);
     let pool = get_sqlite_pool(&instances_guard)?;
     
     sqlx::query::<sqlx::Sqlite>("INSERT INTO run_events (run_id, event_type, payload, created_at) VALUES (?1, ?2, ?3, ?4)")
@@ -79,6 +81,18 @@ pub async fn append_event(
         .execute(pool)
         .await
         .map_err(|e| format!("Failed to append event: {}", e))?;
+
+    // Persist run status to runs table when status changes so get_non_terminal_runs is correct
+    if event_type == RUN_STATUS_CHANGED {
+        if let Some(status) = payload.get("status").and_then(|v| v.as_str()) {
+            let _ = sqlx::query::<sqlx::Sqlite>("UPDATE runs SET status = ?1 WHERE id = ?2")
+                .bind(status)
+                .bind(&run_id)
+                .execute(pool)
+                .await;
+            // Ignore update errors; event log is source of truth, this is for resume filtering
+        }
+    }
 
     // Get the inserted event ID (SQLite last_insert_rowid)
     let rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query::<sqlx::Sqlite>(
@@ -106,6 +120,12 @@ pub async fn append_event(
         .first()
         .ok_or("Failed to retrieve inserted event")?;
 
+    let payload_str = event_data["payload"]
+        .as_str()
+        .ok_or("Invalid payload")?;
+    let payload: serde_json::Value = serde_json::from_str(payload_str)
+        .map_err(|e| format!("Failed to parse payload: {}", e))?;
+
     let event = RunEvent {
         id: event_data["id"]
             .as_i64()
@@ -118,7 +138,7 @@ pub async fn append_event(
             .as_str()
             .ok_or("Invalid event_type")?
             .to_string(),
-        payload: event_data["payload"].clone(),
+        payload,
         created_at: event_data["created_at"]
             .as_str()
             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
@@ -245,6 +265,53 @@ pub async fn load_run_state(
     }
 
     Ok(state)
+}
+
+/// Load run state and all events in one pass (avoids loading events twice per loop iteration).
+pub async fn load_run_state_and_events(
+    app: &AppHandle,
+    run_id: &str,
+) -> Result<(RunState, Vec<RunEvent>), String> {
+    let events = load_run_events(app, run_id).await?;
+    let instances = app.state::<DbInstances>();
+    let instances_guard = instances.inner().0.read().await;
+    let pool = get_sqlite_pool(&instances_guard)?;
+    let rows: Vec<sqlx::sqlite::SqliteRow> = sqlx::query::<sqlx::Sqlite>("SELECT id, goal, status FROM runs WHERE id = ?1")
+        .bind(&run_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| format!("Failed to load run: {}", e))?;
+    let run_row = rows
+        .first()
+        .ok_or_else(|| format!("Run {} not found", run_id))?;
+    let goal = run_row.get::<String, _>("goal");
+    let mut state = RunState::new(run_id.to_string(), goal);
+    for event in &events {
+        apply_event(&mut state, event);
+    }
+    Ok((state, events))
+}
+
+/// Delete all runs, run_events, and execution_tickets from the database. Cannot be undone.
+pub async fn clear_all_runs(app: &AppHandle) -> Result<(), String> {
+    let instances = app.state::<DbInstances>();
+    let instances_guard = instances.inner().0.read().await;
+    let pool = get_sqlite_pool(&instances_guard)?;
+
+    sqlx::query::<sqlx::Sqlite>("DELETE FROM run_events")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to delete run_events: {}", e))?;
+    sqlx::query::<sqlx::Sqlite>("DELETE FROM execution_tickets")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to delete execution_tickets: {}", e))?;
+    sqlx::query::<sqlx::Sqlite>("DELETE FROM runs")
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to delete runs: {}", e))?;
+
+    Ok(())
 }
 
 /// Get all non-terminal runs

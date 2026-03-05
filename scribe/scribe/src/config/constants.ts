@@ -5,7 +5,6 @@ export const STORAGE_KEYS = {
   SYSTEM_PROMPT: "system_prompt",
   SELECTED_SYSTEM_PROMPT_ID: "selected_system_prompt_id",
   SCREENSHOT_CONFIG: "screenshot_config",
-  // add curl_ prefix because we are using curl to store the providers
   CUSTOM_AI_PROVIDERS: "curl_custom_ai_providers",
   CUSTOM_SPEECH_PROVIDERS: "curl_custom_speech_providers",
   SELECTED_AI_PROVIDER: "curl_selected_ai_provider",
@@ -26,7 +25,12 @@ export const MAX_FILES = 6;
 
 // Default settings
 export const DEFAULT_SYSTEM_PROMPT =
-  "You are a helpful AI assistant. Be concise, accurate, and friendly in your responses";
+  "You are a helpful AI assistant. Be concise. CRITICAL: Match the user's length. For short greetings (hi, hey, wassup): reply in 1 short sentence, no emojis. Example: 'hey' → 'Hey!' or 'Hey, what's up?' — that's it. Never output your internal reasoning, planning, or thinking. Only output the final reply to the user.";
+
+// Ghost gateway (agent mode) WebSocket URL. Set VITE_GHOST_GATEWAY_WS_URL in scribe/.env to match scribe-api PORT.
+export const GHOST_GATEWAY_WS_URL =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_GHOST_GATEWAY_WS_URL) ||
+  "ws://127.0.0.1:8083/gateway";
 
 export const DEFAULT_QUICK_ACTIONS = [
   "What should I say?",

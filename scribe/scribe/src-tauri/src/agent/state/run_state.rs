@@ -9,11 +9,18 @@
 use crate::agent::events::{RunEvent, *};
 use serde::{Deserialize, Serialize};
 
+/// Serialized as lowercase so JS frontend (e.g. agent.run polling) can check status === "completed".
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum RunStatus {
     Pending,
     Running,
+    #[serde(rename = "waiting_permission")]
     WaitingPermission,
+    #[serde(rename = "waiting_input")]
+    WaitingInput,
+    #[serde(rename = "waiting_ask_user")]
+    WaitingAskUser,
     Completed,
     Failed,
     Cancelled,
@@ -25,6 +32,8 @@ impl RunStatus {
             RunStatus::Pending => "pending",
             RunStatus::Running => "running",
             RunStatus::WaitingPermission => "waiting_permission",
+            RunStatus::WaitingInput => "waiting_input",
+            RunStatus::WaitingAskUser => "waiting_ask_user",
             RunStatus::Completed => "completed",
             RunStatus::Failed => "failed",
             RunStatus::Cancelled => "cancelled",
@@ -36,6 +45,8 @@ impl RunStatus {
             "pending" => RunStatus::Pending,
             "running" => RunStatus::Running,
             "waiting_permission" => RunStatus::WaitingPermission,
+            "waiting_input" => RunStatus::WaitingInput,
+            "waiting_ask_user" => RunStatus::WaitingAskUser,
             "completed" => RunStatus::Completed,
             "failed" => RunStatus::Failed,
             "cancelled" => RunStatus::Cancelled,
@@ -78,6 +89,7 @@ pub enum StepStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionRequest {
+    #[serde(alias = "permission_id", alias = "ticket_id")]
     pub id: String,
     pub scope: serde_json::Value, // PermissionScope serialized
     pub reason: String,
@@ -125,6 +137,16 @@ impl std::fmt::Display for ArtifactType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Plan {
+    pub id: String,
+    pub goal: String,
+    pub steps: Vec<String>, // Step descriptions
+    pub summary: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub revised_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunState {
     pub id: String,
     pub goal: String,
@@ -133,6 +155,7 @@ pub struct RunState {
     pub steps: Vec<Step>,
     pub permissions: Vec<PermissionRequest>,
     pub artifacts: Vec<Artifact>,
+    pub plan: Option<Plan>, // Current plan (if any)
 }
 
 impl RunState {
@@ -145,6 +168,7 @@ impl RunState {
             steps: Vec::new(),
             permissions: Vec::new(),
             artifacts: Vec::new(),
+            plan: None,
         }
     }
 }
@@ -203,10 +227,48 @@ pub fn apply_event(state: &mut RunState, event: &RunEvent) {
             }
         }
         PERMISSION_REQUESTED => {
-            if let Ok(permission) =
-                serde_json::from_value::<PermissionRequest>(event.payload.clone())
-            {
-                state.permissions.push(permission);
+            // Build PermissionRequest from payload so we tolerate payload shape (permission_id/ticket_id, requested_at format, etc.)
+            let id = event
+                .payload
+                .get("permission_id")
+                .or_else(|| event.payload.get("ticket_id"))
+                .or_else(|| event.payload.get("id"))
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            let reason = event
+                .payload
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let risk_score = event
+                .payload
+                .get("risk_score")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.5) as f32;
+            let scope_type = event
+                .payload
+                .get("scope_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("once")
+                .to_string();
+            let scope = event.payload.get("scope").cloned().unwrap_or(serde_json::Value::Null);
+            let requested_at = event
+                .payload
+                .get("requested_at")
+                .and_then(|v| serde_json::from_value::<chrono::DateTime<chrono::Utc>>(v.clone()).ok())
+                .unwrap_or_else(chrono::Utc::now);
+
+            if let Some(id) = id {
+                state.permissions.push(PermissionRequest {
+                    id,
+                    scope,
+                    reason,
+                    risk_score,
+                    scope_type,
+                    requested_at,
+                    decision: None,
+                });
             }
         }
         PERMISSION_DECISION => {
@@ -232,6 +294,30 @@ pub fn apply_event(state: &mut RunState, event: &RunEvent) {
             // PROJECTION: This is derived from tool output
             if let Ok(artifact) = serde_json::from_value::<Artifact>(event.payload.clone()) {
                 state.artifacts.push(artifact);
+            }
+        }
+        crate::agent::events::PLAN_CREATED => {
+            // Plan created - store it
+            if let Ok(plan) = serde_json::from_value::<Plan>(event.payload.clone()) {
+                state.plan = Some(plan);
+            }
+        }
+        crate::agent::events::PLAN_REVISED => {
+            // Plan revised - update existing plan
+            if let Some(ref mut plan) = state.plan {
+                if let Some(plan_id) = event.payload.get("plan_id").and_then(|v| v.as_str()) {
+                    if plan.id == plan_id {
+                        if let Some(summary) = event.payload.get("summary").and_then(|v| v.as_str()) {
+                            plan.summary = summary.to_string();
+                        }
+                        if let Some(steps) = event.payload.get("steps").and_then(|v| v.as_array()) {
+                            plan.steps = steps.iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .collect();
+                        }
+                        plan.revised_at = Some(chrono::Utc::now());
+                    }
+                }
             }
         }
         _ => {

@@ -90,8 +90,6 @@ export interface UseCompletionReturn {
   keepEngaged: boolean;
   /** Function to toggle keep engaged mode */
   setKeepEngaged: Dispatch<SetStateAction<boolean>>;
-  /** Recent raw SSE lines for debugging streaming issues */
-  rawStreamLines: string[];
 
   // Screenshot functionality
   /** Current screenshot configuration settings */
@@ -131,6 +129,8 @@ export interface UseCompletionReturn {
   captureScreenshot: () => Promise<void>;
   /** Whether a screenshot is currently loading */
   isScreenshotLoading: boolean;
+  /** Show Ghost capabilities as an assistant message (no LLM call) */
+  showCapabilities: () => Promise<void>;
 }
 
 /**

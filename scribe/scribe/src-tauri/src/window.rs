@@ -18,7 +18,11 @@ pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
     // Ensure an initial size that fits the full UI before React mounts
     let _ = window.set_size(Size::Logical(LogicalSize::new(1200.0, 800.0)));
     position_window_top_center(&window, TOP_OFFSET)?;
-    
+
+    // Ensure window is visible and focused on startup
+    let _ = window.show();
+    let _ = window.set_focus();
+
     // Set window as non-focusable on Windows
     // #[cfg(target_os = "windows")]
     // {

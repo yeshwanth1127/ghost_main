@@ -3,6 +3,19 @@ import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
 import { KeyIcon, TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+
+interface FreeModel {
+  provider: string;
+  name: string;
+  id: string;
+  model: string;
+  description: string;
+  modality: string;
+  isAvailable: boolean;
+}
+
+const SELECTED_SCRIBE_MODEL_KEY = "selected_Scribe_model"; // must match ScribeApiSetup
 
 export const Providers = ({
   allAiProviders,
@@ -12,6 +25,83 @@ export const Providers = ({
 }: UseSettingsReturn) => {
   const [localSelectedProvider, setLocalSelectedProvider] =
     useState<ResultJSON | null>(null);
+  const [models, setModels] = useState<FreeModel[]>([]);
+  const [isModelsLoading, setIsModelsLoading] = useState(false);
+  const [selectedFreeModel, setSelectedFreeModel] = useState<FreeModel | null>(null);
+
+  const isExoraSelected =
+    selectedAIProvider?.provider === "exora" || selectedAIProvider?.provider === "ollama";
+
+  const isGpt4oMiniSelected = selectedAIProvider?.provider === "gpt-4o-mini";
+
+  // When GPT 4o Mini is selected, save model for Scribe API
+  useEffect(() => {
+    if (isGpt4oMiniSelected) {
+      const model = {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        name: "GPT 4o Mini",
+        id: "openai/gpt-4o-mini",
+        description: "",
+        modality: "text",
+        isAvailable: true,
+      };
+      invoke("secure_storage_save", {
+        items: [{ key: SELECTED_SCRIBE_MODEL_KEY, value: JSON.stringify(model) }],
+      }).catch((e) => console.error("[Providers] Failed to save GPT 4o Mini model:", e));
+    }
+  }, [isGpt4oMiniSelected]);
+
+  useEffect(() => {
+    if (isExoraSelected) {
+      const loadModels = async () => {
+        setIsModelsLoading(true);
+        try {
+          const fetched = await invoke<FreeModel[]>("fetch_models");
+          setModels(Array.isArray(fetched) ? fetched : []);
+        } catch (e) {
+          console.error("[Providers] Failed to fetch models:", e);
+          setModels([]);
+        } finally {
+          setIsModelsLoading(false);
+        }
+      };
+      loadModels();
+    } else {
+      setModels([]);
+    }
+  }, [isExoraSelected]);
+
+  useEffect(() => {
+    if (isExoraSelected) {
+      invoke<{ selected_Scribe_model?: string }>("secure_storage_get")
+        .then((s: { selected_Scribe_model?: string }) => {
+          if (s?.selected_Scribe_model) {
+            try {
+              setSelectedFreeModel(JSON.parse(s.selected_Scribe_model));
+            } catch {
+              setSelectedFreeModel(null);
+            }
+          } else {
+            setSelectedFreeModel(null);
+          }
+        })
+        .catch(() => setSelectedFreeModel(null));
+    } else {
+      setSelectedFreeModel(null);
+    }
+  }, [isExoraSelected]);
+
+  const handleFreeModelSelect = async (model: FreeModel) => {
+    setSelectedFreeModel(model);
+    try {
+      await invoke("secure_storage_save", {
+        items: [{ key: SELECTED_SCRIBE_MODEL_KEY, value: JSON.stringify(model) }],
+      });
+    } catch (e) {
+      console.error("[Providers] Failed to save free model:", e);
+    }
+  };
 
   useEffect(() => {
     if (selectedAIProvider?.provider) {
@@ -19,11 +109,16 @@ export const Providers = ({
         (p) => p?.id === selectedAIProvider?.provider
       );
       if (provider) {
-        const json = curl2Json(provider?.curl);
-        setLocalSelectedProvider(json as ResultJSON);
+        try {
+          const json = curl2Json(provider?.curl);
+          setLocalSelectedProvider(json as ResultJSON);
+        } catch (e) {
+          console.error("[Providers] Error parsing provider curl:", provider?.id, e);
+          setLocalSelectedProvider(null);
+        }
       }
     }
-  }, [selectedAIProvider?.provider]);
+  }, [selectedAIProvider?.provider, allAiProviders]);
 
   const findKeyAndValue = (key: string) => {
     return variables?.find((v) => v?.key === key);
@@ -39,6 +134,14 @@ export const Providers = ({
     return !getApiKeyValue().trim();
   };
 
+  // Helper function to get display name for provider
+  const getProviderDisplayName = (providerId: string | undefined): string => {
+    if (!providerId) return "Custom Provider";
+    if (providerId === "exora") return "Exora AI";
+    if (providerId === "gpt-4o-mini") return "GPT 4o Mini";
+    return providerId;
+  };
+
   return (
     <div className="space-y-3">
       <div className="space-y-2">
@@ -49,15 +152,28 @@ export const Providers = ({
         <Selection
           selected={selectedAIProvider?.provider}
           options={allAiProviders?.map((provider) => {
-            const json = curl2Json(provider?.curl);
-            return {
-              label: provider?.isCustom
+            try {
+              const json = provider?.isCustom ? curl2Json(provider?.curl) : null;
+              const label = provider?.isCustom
                 ? json?.url || "Custom Provider"
-                : provider?.id || "Custom Provider",
-              value: provider?.id || "Custom Provider",
-              isCustom: provider?.isCustom,
-            };
-          })}
+                : getProviderDisplayName(provider?.id);
+              return {
+                label,
+                value: provider?.id || "Custom Provider",
+                isCustom: provider?.isCustom || false,
+              };
+            } catch (e) {
+              console.error("[Providers] Error processing provider:", provider?.id, e);
+              // Fallback: still create the option even if curl parsing fails
+              return {
+                label: provider?.isCustom
+                  ? "Custom Provider"
+                  : getProviderDisplayName(provider?.id),
+                value: provider?.id || "Custom Provider",
+                isCustom: provider?.isCustom || false,
+              };
+            }
+          }).filter(Boolean) || []}
           placeholder="Choose your AI provider"
           onChange={(value) => {
             onSetSelectedAIProvider({
@@ -67,6 +183,39 @@ export const Providers = ({
           }}
         />
       </div>
+
+      {isExoraSelected && (
+        <div className="space-y-2">
+          <Header
+            title="Or select a model"
+            description="Choose from OpenRouter models (requires Ghost API license)."
+          />
+          <Selection
+            selected={selectedFreeModel?.id ?? "__none__"}
+            options={[
+              { label: "Use Exora AI only", value: "__none__", isCustom: false },
+              ...models.map((m) => ({
+                label: `${m.name} (${m.provider})`,
+                value: m.id,
+                isCustom: false,
+              })),
+            ]}
+            placeholder={isModelsLoading ? "Loading..." : "Select model"}
+            isLoading={isModelsLoading}
+            onChange={(value) => {
+              if (value === "__none__") {
+                setSelectedFreeModel(null);
+                invoke("secure_storage_remove", {
+                  keys: [SELECTED_SCRIBE_MODEL_KEY],
+                }).catch(() => {});
+              } else {
+                const model = models.find((m) => m.id === value);
+                if (model) handleFreeModelSelect(model);
+              }
+            }}
+          />
+        </div>
+      )}
 
       {localSelectedProvider ? (
         <Header
@@ -86,7 +235,7 @@ export const Providers = ({
                 (p) => p?.id === selectedAIProvider?.provider
               )?.isCustom
                 ? "Custom Provider"
-                : selectedAIProvider?.provider
+                : getProviderDisplayName(selectedAIProvider?.provider)
             } API key to authenticate and access AI models. Your key is stored locally and never shared.`}
           />
 
@@ -196,7 +345,7 @@ export const Providers = ({
                       (p) => p?.id === selectedAIProvider?.provider
                     )?.isCustom
                       ? "Custom Provider"
-                      : selectedAIProvider?.provider
+                      : getProviderDisplayName(selectedAIProvider?.provider)
                   }`}
                 />
                 <TextInput
@@ -205,7 +354,7 @@ export const Providers = ({
                       (p) => p?.id === selectedAIProvider?.provider
                     )?.isCustom
                       ? "Custom Provider"
-                      : selectedAIProvider?.provider
+                      : getProviderDisplayName(selectedAIProvider?.provider)
                   } ${variable?.key?.replace(/_/g, " ") || "value"}`}
                   value={getVariableValue()}
                   onChange={(value) => {

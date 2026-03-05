@@ -42,7 +42,7 @@ export const ChatHistory = ({
         <PopoverContent
           align="end"
           side="bottom"
-          className="select-none w-screen p-0 border overflow-hidden border-input/50"
+          className="select-none w-[min(380px,90vw)] min-w-[320px] p-0 border overflow-hidden border-input/50 rounded-xl shadow-lg"
           sideOffset={8}
         >
           {historyHook.viewingConversation ? (

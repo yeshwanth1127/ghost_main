@@ -13,6 +13,8 @@ interface DbConversation {
   title: string;
   created_at: number;
   updated_at: number;
+  model_used?: string | null;
+  total_tokens?: number | null;
 }
 
 /**
@@ -98,14 +100,16 @@ export async function createConversation(
   const db = await getDatabase();
 
   try {
-    // Insert conversation
+    // Insert conversation (model_used, total_tokens optional; DB may have columns from migration 6)
     await db.execute(
-      "INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO conversations (id, title, created_at, updated_at, model_used, total_tokens) VALUES (?, ?, ?, ?, ?, ?)",
       [
         conversation.id,
         conversation.title,
         conversation.createdAt || Date.now(),
         conversation.updatedAt || Date.now(),
+        conversation.modelUsed ?? null,
+        conversation.totalTokens ?? null,
       ]
     );
 
@@ -183,6 +187,8 @@ export async function getAllConversations(): Promise<ChatConversation[]> {
       title: conv.title,
       createdAt: conv.created_at,
       updatedAt: conv.updated_at,
+      modelUsed: conv.model_used ?? undefined,
+      totalTokens: conv.total_tokens ?? undefined,
       messages:
         messagesByConversation.get(conv.id)?.map((msg) => ({
           id: msg.id,
@@ -235,6 +241,8 @@ export async function getConversationById(
       title: conv.title,
       createdAt: conv.created_at,
       updatedAt: conv.updated_at,
+      modelUsed: conv.model_used ?? undefined,
+      totalTokens: conv.total_tokens ?? undefined,
       messages: messages.map((msg) => ({
         id: msg.id,
         role: msg.role,
@@ -262,10 +270,16 @@ export async function updateConversation(
   const db = await getDatabase();
 
   try {
-    // Update conversation
+    // Update conversation (include model_used, total_tokens when columns exist)
     const updateResult = await db.execute(
-      "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
-      [conversation.title, conversation.updatedAt, conversation.id]
+      "UPDATE conversations SET title = ?, updated_at = ?, model_used = ?, total_tokens = ? WHERE id = ?",
+      [
+        conversation.title,
+        conversation.updatedAt,
+        conversation.modelUsed ?? null,
+        conversation.totalTokens ?? null,
+        conversation.id,
+      ]
     );
 
     if (updateResult.rowsAffected === 0) {
@@ -399,6 +413,47 @@ export async function deleteAllConversations(): Promise<void> {
     console.error("Failed to delete all conversations:", error);
     throw error;
   }
+}
+
+/**
+ * Semantic memory: get key-value facts for a conversation.
+ * Returns empty object if table missing or no facts.
+ */
+export async function getFactsForConversation(
+  conversationId: string
+): Promise<Record<string, string>> {
+  if (!conversationId) return {};
+  const db = await getDatabase();
+  try {
+    const rows = await db.select<{ key: string; value: string }[]>(
+      "SELECT key, value FROM conversation_facts WHERE conversation_id = ?",
+      [conversationId]
+    );
+    const out: Record<string, string> = {};
+    for (const row of rows) {
+      out[row.key] = row.value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Semantic memory: set a fact for a conversation (upsert by key).
+ */
+export async function setFactForConversation(
+  conversationId: string,
+  key: string,
+  value: string
+): Promise<void> {
+  if (!conversationId || !key) return;
+  const db = await getDatabase();
+  const now = Date.now();
+  await db.execute(
+    "INSERT INTO conversation_facts (conversation_id, key, value, created_at) VALUES (?, ?, ?, ?) ON CONFLICT(conversation_id, key) DO UPDATE SET value = excluded.value, created_at = excluded.created_at",
+    [conversationId, key, value, now]
+  );
 }
 
 /**

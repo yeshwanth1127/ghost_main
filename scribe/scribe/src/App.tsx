@@ -11,6 +11,7 @@ import {
   ModeSelector,
   Button,
   AgentView,
+  AgentErrorBoundary,
 } from "@/components";
 import { useApp } from "@/hooks";
 import { useApp as useAppContext } from "@/contexts";
@@ -80,13 +81,15 @@ const App = () => {
   if (appMode === null) {
     return (
       <div className="w-screen h-screen flex overflow-hidden justify-center items-center px-3 py-3">
-        <Card className="w-full max-w-5xl flex flex-col items-center gap-3 px-4 py-6 overflow-visible rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur">
-          <ModeSelector
-            onModeSelect={(mode) => {
-              setAppMode(mode);
-              updateAppMode(mode);
-            }}
-          />
+        <Card className="w-full max-w-3xl flex flex-col items-center gap-3 px-4 py-6 overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur">
+          <div className="w-full">
+            <ModeSelector
+              onModeSelect={(mode) => {
+                setAppMode(mode);
+                updateAppMode(mode);
+              }}
+            />
+          </div>
         </Card>
       </div>
     );
@@ -95,9 +98,9 @@ const App = () => {
   // Show agent mode UI
   if (appMode === "agent") {
     return (
-      <div className="w-screen h-screen flex overflow-hidden justify-center items-start px-3 py-3">
-        <Card className="w-full max-w-5xl max-h-[calc(100vh-3rem)] flex flex-col items-center gap-3 px-4 py-4 min-h-[220px] overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur">
-          <div className="w-full flex flex-row items-center justify-between mb-2">
+      <div className="w-screen h-screen flex overflow-hidden justify-center items-stretch px-3 py-3">
+        <Card className="w-full max-w-5xl h-full max-h-[calc(100vh-1.5rem)] flex flex-col items-stretch gap-3 px-4 py-4 min-h-0 overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur">
+          <div className="w-full flex-shrink-0 flex flex-row items-center justify-between mb-2">
             <h2 className="text-lg font-semibold">Agent Mode</h2>
             <Button
               variant="ghost"
@@ -110,8 +113,15 @@ const App = () => {
               Switch Mode
             </Button>
           </div>
-          <div className="w-full flex-1 overflow-auto">
-            <AgentView />
+          <div className="w-full flex-1 min-h-0 overflow-auto flex flex-col">
+            <AgentErrorBoundary
+              onReset={() => {
+                setAppMode(null);
+                updateAppMode(null);
+              }}
+            >
+              <AgentView />
+            </AgentErrorBoundary>
           </div>
         </Card>
       </div>
@@ -121,13 +131,13 @@ const App = () => {
   // Show chat mode (classic UI)
   return (
     <div
-      className={`w-screen h-screen flex overflow-visible justify-center items-start px-3 py-3 ${
+      className={`w-screen h-screen min-h-screen flex overflow-visible justify-center items-start px-3 py-3 ${
         isHidden ? "hidden pointer-events-none" : ""
       }`}
     >
       <Card
         ref={containerRef as any}
-        className="w-full flex flex-row items-center gap-3 px-4 py-3 min-h-[96px] overflow-visible rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur"
+        className="w-full max-w-4xl flex flex-row items-center gap-3 px-4 py-3 min-h-[96px] overflow-visible rounded-2xl border border-input/50 bg-card shadow-xl backdrop-blur"
       >
         {trialExpired ? (
           <div className="absolute top-1 left-1 right-1 mx-2 px-3 py-1 text-xs rounded bg-amber-100 text-amber-700 border border-amber-200">
@@ -158,26 +168,32 @@ const App = () => {
           className={`${
             systemAudio?.capturing
               ? "hidden w-full fade-out transition-all duration-300"
-              : "w-full flex flex-row gap-2 items-center"
+              : "w-full flex flex-row items-center gap-3 min-w-0"
           }`}
         >
-          <Completion isHidden={isHidden} systemAudio={systemAudio} />
-          <ChatHistory
-            onSelectConversation={handleSelectConversation}
-            onNewConversation={handleNewConversation}
-            currentConversationId={null}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setAppMode(null);
-              updateAppMode(null);
-            }}
-          >
-            Switch Mode
-          </Button>
-          <Settings />
+          {/* Input area - takes remaining space */}
+          <div className="flex-1 min-w-0">
+            <Completion isHidden={isHidden} systemAudio={systemAudio} />
+          </div>
+          {/* Right-side actions - compact, aligned */}
+          <div className="flex shrink-0 items-center gap-1">
+            <ChatHistory
+              onSelectConversation={handleSelectConversation}
+              onNewConversation={handleNewConversation}
+              currentConversationId={null}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setAppMode(null);
+                updateAppMode(null);
+              }}
+            >
+              Switch Mode
+            </Button>
+            <Settings />
+          </div>
         </div>
 
         <Updater />

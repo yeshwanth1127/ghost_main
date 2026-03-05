@@ -8,6 +8,12 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use std::{thread, time::Duration};
 
+#[cfg(target_os = "macos")]
+use tauri_nspanel::ManagerExt;
+
+/// Delay for compositor to update after hiding windows (ms)
+const HIDE_BEFORE_CAPTURE_MS: u64 = 150;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SelectionCoords {
     pub x: u32,
@@ -207,5 +213,78 @@ pub async fn capture_to_base64() -> Result<String, String> {
     })
     .await
     .map_err(|e| format!("Task panicked: {}", e))?
+}
+
+/// Captures the screen while Ghost windows are hidden, so the image shows
+/// what's behind Ghost (e.g. Cursor, a test, another app).
+#[tauri::command]
+pub async fn capture_screen_behind_ghost(app: tauri::AppHandle) -> Result<String, String> {
+    // Collect all Ghost windows and hide them
+    let windows_to_restore: Vec<(String, bool)> = app
+        .webview_windows()
+        .iter()
+        .filter_map(|(label, w)| {
+            w.is_visible()
+                .ok()
+                .filter(|&v| v)
+                .map(|_| {
+                    let _ = w.hide();
+                    (label.clone(), true)
+                })
+        })
+        .collect();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(panel) = app.get_webview_panel("main") {
+            let _ = panel.hide();
+        }
+    }
+
+    // Give compositor time to update so content behind Ghost is visible
+    thread::sleep(Duration::from_millis(HIDE_BEFORE_CAPTURE_MS));
+
+    // Capture the screen (now showing only what was behind Ghost)
+    let result = tauri::async_runtime::spawn_blocking(|| {
+        let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
+        let primary_monitor = monitors
+            .into_iter()
+            .find(|m| m.is_primary())
+            .ok_or_else(|| "No primary monitor found".to_string())?;
+
+        let image = primary_monitor
+            .capture_image()
+            .map_err(|e| format!("Failed to capture image: {}", e))?;
+        let mut png_buffer = Vec::new();
+        PngEncoder::new(&mut png_buffer)
+            .write_image(
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                ColorType::Rgba8.into(),
+            )
+            .map_err(|e| format!("Failed to encode to PNG: {}", e))?;
+        let base64_str = base64::engine::general_purpose::STANDARD.encode(png_buffer);
+
+        Ok::<_, String>(base64_str)
+    })
+    .await
+    .map_err(|e| format!("Task panicked: {}", e))??;
+
+    // Restore all windows
+    for (label, _was_visible) in windows_to_restore {
+        if let Some(w) = app.get_webview_window(&label) {
+            let _ = w.show();
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(panel) = app.get_webview_panel("main") {
+            let _ = panel.show();
+        }
+    }
+
+    Ok(result)
 }
 

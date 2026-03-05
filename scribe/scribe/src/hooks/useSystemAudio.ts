@@ -245,7 +245,7 @@ export function useSystemAudio() {
             }
             const audioBlob = new Blob([bytes], { type: "audio/wav" });
 
-            const useScribeAPI = await shouldUseScribeAPI();
+            const useGhostAPI = await shouldUseGhostAPI();
             if (!selectedSttProvider.provider && !useScribeAPI) {
               setError("No speech provider selected.");
               return;
@@ -472,7 +472,7 @@ export function useSystemAudio() {
 
         let fullResponse = "";
 
-        const useScribeAPI = await shouldUseScribeAPI();
+        const useScribeAPI = await shouldUseScribeAPI(selectedAIProvider);
         if (!selectedAIProvider.provider && !useScribeAPI) {
           setError("No AI provider selected.");
           return;

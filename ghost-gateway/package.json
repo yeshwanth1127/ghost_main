@@ -1,0 +1,26 @@
+{
+  "name": "ghost-gateway",
+  "version": "1.0.0",
+  "description": "Ghost gateway server (agent mode) - our own implementation, code ported from Moltbot",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "ghost-gateway": "dist/entry.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/entry.js",
+    "gateway": "node dist/entry.js"
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
