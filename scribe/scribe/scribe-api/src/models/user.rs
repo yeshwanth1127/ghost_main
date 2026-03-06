@@ -85,3 +85,16 @@ pub struct ValidateResponse {
     pub is_active: bool,
     pub last_validated_at: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidateLicenseRequest {
+    pub license_key: String,
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidateLicenseResponse {
+    pub activated: bool,
+    pub error: Option<String>,
+    pub is_admin: bool,
+}

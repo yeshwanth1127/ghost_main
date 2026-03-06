@@ -155,23 +155,21 @@ pub async fn validate(
 
     // Check if license is active
     let mut is_active = license.status == "active";
-
-    // Owner license: never expires, no trial check
-    if !license.is_owner {
-        // Check if trial has expired
-        if is_active && license.is_trial {
-            if let Some(trial_ends_at) = license.trial_ends_at {
-                if trial_ends_at < Utc::now() {
-                    is_active = false;
-                }
+    
+    // Check if trial has expired
+    if is_active && license.is_trial {
+        if let Some(trial_ends_at) = license.trial_ends_at {
+            if trial_ends_at < Utc::now() {
+                is_active = false;
             }
         }
-        // Check if paid license has expired
-        if is_active {
-            if let Some(expires_at) = license.expires_at {
-                if expires_at < Utc::now() {
-                    is_active = false;
-                }
+    }
+    
+    // Check if paid license has expired
+    if is_active {
+        if let Some(expires_at) = license.expires_at {
+            if expires_at < Utc::now() {
+                is_active = false;
             }
         }
     }
@@ -192,12 +190,10 @@ pub async fn validate(
     }).into_response()
 }
 
-pub async fn checkout(State(state): State<AppState>) -> impl IntoResponse {
-    let base = state.config.payment_base_url.trim_end_matches('/');
-    let checkout_url = format!("{}/subscriptions", base);
+pub async fn checkout() -> impl IntoResponse {
     Json(serde_json::json!({
         "success": true,
-        "checkout_url": checkout_url
+        "checkout_url": "https://exora.solutions/checkout"
     }))
 }
 
@@ -651,6 +647,117 @@ pub async fn get_user_from_license(
                     "error": "Database error"
                 }))
             ).into_response()
+        }
+    }
+}
+
+pub async fn validate_license(
+    State(state): State<AppState>,
+    Json(request): Json<crate::models::ValidateLicenseRequest>,
+) -> impl IntoResponse {
+    use crate::models::ValidateLicenseResponse;
+
+    let license_key = request.license_key.trim().to_uppercase();
+
+    // Check if it's an admin license
+    let is_admin = license_key == "GHOST-OWNER-00000000";
+
+    // Query for the license
+    match sqlx::query_as::<_, crate::models::License>(
+        "SELECT * FROM licenses WHERE UPPER(license_key) = $1 AND status = 'active'",
+    )
+    .bind(&license_key)
+    .fetch_optional(&state.pool)
+    .await
+    {
+        Ok(Some(license)) => {
+            // For admin licenses, no email validation needed
+            if is_admin {
+                return Json(ValidateLicenseResponse {
+                    activated: true,
+                    error: None,
+                    is_admin: true,
+                })
+                .into_response();
+            }
+
+            // For regular licenses, validate email if provided
+            if let Some(email) = request.email {
+                let email = email.trim().to_lowercase();
+
+                // Check if the license belongs to a user with this email
+                match sqlx::query_as::<_, crate::models::User>(
+                    "SELECT u.* FROM users u 
+                     INNER JOIN licenses l ON l.user_id = u.id 
+                     WHERE UPPER(l.license_key) = $1 
+                     AND LOWER(u.email) = $2 
+                     AND l.status = 'active'",
+                )
+                .bind(&license_key)
+                .bind(&email)
+                .fetch_optional(&state.pool)
+                .await
+                {
+                    Ok(Some(_)) => {
+                        return Json(ValidateLicenseResponse {
+                            activated: true,
+                            error: None,
+                            is_admin: false,
+                        })
+                        .into_response();
+                    }
+                    Ok(None) => {
+                        return Json(ValidateLicenseResponse {
+                            activated: false,
+                            error: Some(
+                                "License key does not match the provided email".to_string()
+                            ),
+                            is_admin: false,
+                        })
+                        .into_response();
+                    }
+                    Err(e) => {
+                        tracing::error!("Database error: {}", e);
+                        return (
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(ValidateLicenseResponse {
+                                activated: false,
+                                error: Some("Database error".to_string()),
+                                is_admin: false,
+                            }),
+                        )
+                            .into_response();
+                    }
+                }
+            } else {
+                // No email provided for non-admin license - validation fails
+                return Json(ValidateLicenseResponse {
+                    activated: false,
+                    error: Some("Email is required for regular licenses".to_string()),
+                    is_admin: false,
+                })
+                .into_response();
+            }
+        }
+        Ok(None) => {
+            return Json(ValidateLicenseResponse {
+                activated: false,
+                error: Some("Invalid or inactive license key".to_string()),
+                is_admin: false,
+            })
+            .into_response();
+        }
+        Err(e) => {
+            tracing::error!("Database error: {}", e);
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ValidateLicenseResponse {
+                    activated: false,
+                    error: Some("Database error".to_string()),
+                    is_admin: false,
+                }),
+            )
+                .into_response();
         }
     }
 }

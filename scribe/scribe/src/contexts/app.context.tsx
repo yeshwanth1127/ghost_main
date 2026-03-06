@@ -126,6 +126,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [ScribeApiEnabled, setScribeApiEnabledState] = useState<boolean>(
     safeLocalStorage.getItem(STORAGE_KEYS.Scribe_API_ENABLED) === "true"
   );
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
   const ensureInstanceIdForStoredLicense = async () => {
     try {
@@ -243,17 +244,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
     if (savedSelectedAi) {
       let parsed = JSON.parse(savedSelectedAi);
-      // Migrate ollama → exora (Exora AI is the single Ollama-connected provider)
-      if (parsed?.provider === "ollama") {
-        parsed = { ...parsed, provider: "exora" };
-        safeLocalStorage.setItem(
-          STORAGE_KEYS.SELECTED_AI_PROVIDER,
-          JSON.stringify(parsed)
-        );
-      }
-      // Migrate deprecated llama3.2 to llama3:latest for Exora AI
+      // Migrate deprecated llama3.2 to llama3:latest for Exora/Ollama
       if (
-        parsed?.provider === "exora" &&
+        (parsed?.provider === "exora" || parsed?.provider === "ollama") &&
         parsed?.variables?.model === "llama3.2"
       ) {
         parsed = {
@@ -329,6 +322,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
     if (savedScribeApiEnabled !== null) {
       setScribeApiEnabledState(savedScribeApiEnabled === "true");
+    }
+
+    // Check if user is admin (owner license)
+    const licenseKey = safeLocalStorage.getItem("Scribe_license_key");
+    if (licenseKey === "GHOST-OWNER-00000000") {
+      setIsAdmin(true);
     }
   };
 
@@ -679,6 +678,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     selectedAudioDevices,
     setSelectedAudioDevices,
     setCursorType,
+    isAdmin,
     // trial status
     trialExpired,
   };

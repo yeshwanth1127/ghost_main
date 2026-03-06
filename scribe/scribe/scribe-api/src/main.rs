@@ -17,7 +17,6 @@ use axum::{
 use axum::middleware::{from_fn, Next};
 use sqlx::PgPool;
 use std::net::SocketAddr;
-use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber;
 
@@ -73,51 +72,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create database connection pool
     let pool = create_pool(&config.database_url).await?;
 
-    // Run migrations (auto-repair orphaned version 3 if VersionMissing)
-    let migrate_result = sqlx::migrate!("./migrations").run(&pool).await;
-    if let Err(e) = migrate_result {
-        if e.to_string().contains("VersionMissing(3)") {
-            tracing::warn!("Repairing orphaned migration version 3...");
-            if sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 3")
-                .execute(&pool)
-                .await
-                .is_ok()
-            {
-                if let Err(e2) = sqlx::migrate!("./migrations").run(&pool).await {
-                    panic!("Failed to run migrations after repair: {}", e2);
-                }
-                tracing::info!("Migration repair successful");
-            } else {
-                panic!("Failed to run migrations: {}. Try: DELETE FROM _sqlx_migrations WHERE version = 3;", e);
-            }
-        } else {
-            panic!("Failed to run migrations: {}", e);
-        }
-    }
-
-    // Background task: reset monthly tokens for users whose monthly_reset_at has passed
-    let pool_reset = pool.clone();
-    tokio::spawn(async move {
-        loop {
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-            if let Err(e) = sqlx::query(
-                r#"
-                UPDATE users
-                SET tokens_used_this_month = 0,
-                    monthly_reset_at = DATE_TRUNC('month', NOW() + INTERVAL '1 month'),
-                    updated_at = NOW()
-                WHERE monthly_reset_at < NOW()
-                "#,
-            )
-            .execute(&pool_reset)
-            .await
-            {
-                tracing::error!("Monthly token reset failed: {}", e);
-            } else {
-                tracing::info!("Monthly token reset task completed");
-            }
-        }
-    });
+    // Run migrations
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
 
     // Build the application
     let app = create_router(pool.clone(), config.clone()).await;
@@ -188,6 +147,7 @@ async fn create_router(pool: PgPool, config: Config) -> Router {
         .route("/api/v1/create-trial", post(routes::auth::create_trial))
         .route("/api/v1/auth/register", post(routes::auth::register))
         .route("/api/v1/auth/login", post(routes::auth::login))
+        .route("/api/v1/auth/validate-license", post(routes::auth::validate_license))
         .route("/api/v1/auth/get-user", post(routes::auth::get_user_from_license))
         .route("/api/v1/chat", post(routes::chat::chat))
         .route("/api/v1/audio", post(routes::audio::transcribe))
@@ -195,7 +155,6 @@ async fn create_router(pool: PgPool, config: Config) -> Router {
         .route("/api/v1/usage/:user_id", get(routes::usage::get_usage_stats))
         .route("/api/v1/usage/:user_id/history", get(routes::usage::get_usage_history))
         .route("/api/v1/usage/:user_id/limit-check", get(routes::usage::check_token_limit))
-        .route("/api/v1/usage/record", post(routes::usage::record_usage_from_client))
         .route("/api/v1/usage/pricing", get(routes::usage::get_model_pricing))
         // Models and updates
         .route("/api/v1/models", post(routes::models::list_models))

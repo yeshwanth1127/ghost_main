@@ -32,9 +32,7 @@ export const Completion = ({
     <Popover
       open={isPopoverOpen}
       onOpenChange={(open) => {
-        // Don't reset when we have a response - focus change (e.g. after streaming) can
-        // trigger close; keep response visible until user explicitly clears via X button
-        if (!open && !isLoading && !keepEngaged && !response) {
+        if (!open && !isLoading && !keepEngaged) {
           reset();
         }
       }}

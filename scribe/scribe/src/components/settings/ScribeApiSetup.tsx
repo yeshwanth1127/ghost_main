@@ -1,13 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  KeyIcon,
-  TrashIcon,
-  LoaderIcon,
-  ChevronDown,
-} from "lucide-react";
+import { LoaderIcon, ChevronDown } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 // import { openUrl } from "@tauri-apps/plugin-opener";
 import { useApp } from "@/contexts";
+import { AdminNotice } from "@/components/admin";
 import {
   GetLicense,
   Button,
@@ -58,17 +54,6 @@ const LICENSE_KEY_STORAGE_KEY = "Scribe_license_key";
 const INSTANCE_ID_STORAGE_KEY = "Scribe_instance_id";
 const SELECTED_Scribe_MODEL_STORAGE_KEY = "selected_Scribe_model";
 
-/** Virtual model for "Use Exora AI only" - searchable in model selector */
-const EXORA_AI_OPTION: Model = {
-  id: "__exora__",
-  provider: "Exora AI",
-  name: "Exora AI",
-  model: "ollama",
-  description: "Use local Ollama",
-  modality: "chat",
-  isAvailable: true,
-};
-
 export const ScribeApiSetup = () => {
   const {
     ScribeApiEnabled,
@@ -79,7 +64,6 @@ export const ScribeApiSetup = () => {
     selectedAIProvider,
   } = useApp();
 
-  const [licenseKey, setLicenseKey] = useState("");
   const [storedLicenseKey, setStoredLicenseKey] = useState<string | null>(null);
   const [maskedLicenseKey, setMaskedLicenseKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -91,6 +75,9 @@ export const ScribeApiSetup = () => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [showLoginForm, setShowLoginForm] = useState(false);
+  const [showManualLicenseEntry, setShowManualLicenseEntry] = useState(false);
+  const [manualLicenseKey, setManualLicenseKey] = useState("");
+  const [manualLicenseEmail, setManualLicenseEmail] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const fetchInitiated = useRef(false);
   const commandListRef = useRef<HTMLDivElement>(null);
@@ -136,8 +123,7 @@ export const ScribeApiSetup = () => {
       const selectedProviderJson = safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_AI_PROVIDER);
       if (selectedProviderJson) {
         try {
-          const p = JSON.parse(selectedProviderJson);
-          const isOllama = p?.provider === "ollama" || p?.provider === "exora";
+          JSON.parse(selectedProviderJson); // Validate JSON
           if (models.length === 0 && !isModelsLoading && fetchInitiated.current) {
             fetchModels();
           }
@@ -160,8 +146,11 @@ export const ScribeApiSetup = () => {
     setIsModelsLoading(true);
     try {
       const fetchedModels = await invoke<Model[]>("fetch_models");
-      // Show all OpenRouter models (no free-only filter)
-      setModels(Array.isArray(fetchedModels) ? fetchedModels : []);
+      // Show all OpenRouter models (free and paid)
+      const allModels = Array.isArray(fetchedModels)
+        ? fetchedModels
+        : [];
+      setModels(allModels);
     } catch (error) {
       console.error("Failed to fetch models:", error);
     } finally {
@@ -207,8 +196,12 @@ export const ScribeApiSetup = () => {
     }
   };
 
-  const handleActivateLicense = async () => {
-    if (!licenseKey.trim()) {
+  const handleManualLicenseActivation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const licenseKeyTrimmed = manualLicenseKey.trim().toUpperCase();
+    
+    if (!licenseKeyTrimmed) {
       setError("Please enter a license key");
       return;
     }
@@ -218,42 +211,104 @@ export const ScribeApiSetup = () => {
     setSuccess(null);
 
     try {
-      const response: ActivationResponse = await invoke(
-        "activate_license_api",
-        {
-          licenseKey: licenseKey.trim(),
-        }
-      );
+      // Check if it's an admin license
+      const isAdminLicense = licenseKeyTrimmed === "GHOST-OWNER-00000000";
 
-      if (response.activated && response.instance) {
-        // Store the license data securely in one call
+      if (isAdminLicense) {
+        // Admin license: no email validation needed
+        const instanceId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
         await invoke("secure_storage_save", {
           items: [
             {
               key: LICENSE_KEY_STORAGE_KEY,
-              value: licenseKey.trim(),
+              value: licenseKeyTrimmed,
             },
             {
               key: INSTANCE_ID_STORAGE_KEY,
-              value: response.instance.id,
+              value: instanceId,
+            },
+          ],
+        });
+
+        setSuccess("Admin license activated successfully! 🎉");
+        setManualLicenseKey("");
+        setManualLicenseEmail("");
+        setShowManualLicenseEntry(false);
+        setScribeApiEnabled(true);
+
+        await loadLicenseStatus();
+        await getActiveLicenseStatus();
+      } else {
+        // Regular license: validate with backend
+        if (!manualLicenseEmail.trim()) {
+          setError("Email is required for regular licenses. Admin license does not need email.");
+          setIsLoading(false);
+          return;
+        }
+
+        // Verify license with backend
+        const response = await fetch(
+          `http://localhost:8083/api/v1/auth/validate-license`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              license_key: licenseKeyTrimmed,
+              email: manualLicenseEmail.trim(),
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          setError(
+            errorData.error || "Invalid license key or email combination"
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (!data.activated) {
+          setError(data.error || "License validation failed");
+          setIsLoading(false);
+          return;
+        }
+
+        // Store the license
+        const instanceId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
+        await invoke("secure_storage_save", {
+          items: [
+            {
+              key: LICENSE_KEY_STORAGE_KEY,
+              value: licenseKeyTrimmed,
+            },
+            {
+              key: INSTANCE_ID_STORAGE_KEY,
+              value: instanceId,
             },
           ],
         });
 
         setSuccess("License activated successfully!");
-        setLicenseKey(""); // Clear the input
-
-        // Auto-enable Scribe API when license is activated
+        setManualLicenseKey("");
+        setManualLicenseEmail("");
+        setShowManualLicenseEntry(false);
         setScribeApiEnabled(true);
 
-        await loadLicenseStatus(); // Reload status
+        await loadLicenseStatus();
         await getActiveLicenseStatus();
-      } else {
-        setError(response.error || "Failed to activate license");
       }
     } catch (err) {
-      console.error("License activation failed:", err);
-      setError(typeof err === "string" ? err : "Failed to activate license");
+      console.error("License activation error:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to activate license"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -396,19 +451,6 @@ export const ScribeApiSetup = () => {
   };
 
   const handleModelSelect = async (model: Model) => {
-    if (model.id === "__exora__") {
-      setSelectedModel(null);
-      setIsPopoverOpen(false);
-      setSearchValue("");
-      try {
-        await invoke("secure_storage_remove", {
-          keys: [SELECTED_Scribe_MODEL_STORAGE_KEY],
-        });
-      } catch (e) {
-        console.error("Failed to clear model selection:", e);
-      }
-      return;
-    }
     setSelectedModel(model);
     setIsPopoverOpen(false); // Close popover when model is selected
     setSearchValue(""); // Reset search when model is selected
@@ -431,12 +473,6 @@ export const ScribeApiSetup = () => {
     setIsPopoverOpen(open);
     if (open) {
       setSearchValue(""); // Reset search when popover opens
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !storedLicenseKey) {
-      handleActivateLicense();
     }
   };
 
@@ -499,9 +535,11 @@ export const ScribeApiSetup = () => {
     .slice(0, 3);
 
   return (
-    <div id="Scribe-api" className="space-y-4">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between border-b border-input/30 pb-4 mb-4">
+    <div id="Scribe-api" className="space-y-3 -mt-2">
+      {/* Support section removed as requested */}
+
+      <div className="space-y-2 pt-2">
+        <div className="flex items-center justify-between border-b pb-2">
           <Header
             titleClassName="text-lg"
             title="Ghost Access"
@@ -511,6 +549,9 @@ export const ScribeApiSetup = () => {
             {!storedLicenseKey && <GetLicense />}
           </div>
         </div>
+
+        {/* Admin Notice */}
+        <AdminNotice />
 
         {/* Error Message */}
         {error && (
@@ -531,7 +572,7 @@ export const ScribeApiSetup = () => {
         {isOllamaSelected && !hasSelectedOtherModel && (
           <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
             <p className="text-sm text-blue-700 dark:text-blue-400">
-              <strong>Exora AI</strong> is selected. Or select a model below to use OpenRouter instead.
+              <strong>Exora AI</strong> is selected. Or select a different model below to use OpenRouter instead.
             </p>
           </div>
         )}
@@ -549,7 +590,7 @@ export const ScribeApiSetup = () => {
                 variant="outline"
                 className="h-11 text-start shadow-none w-full"
               >
-                {selectedModel ? selectedModel.name : "Select pro models"}{" "}
+                {selectedModel ? selectedModel.name : "Select model"}{" "}
                 <ChevronDown />
               </Button>
             </PopoverTrigger>
@@ -572,29 +613,6 @@ export const ScribeApiSetup = () => {
                   No models found. Please try again later.
                 </CommandEmpty>
                 <CommandGroup>
-                  {isOllamaSelected && (
-                    <CommandItem
-                      key="__exora__"
-                      className="cursor-pointer"
-                      onSelect={() => handleModelSelect(EXORA_AI_OPTION)}
-                      value="Exora AI Use local Ollama"
-                    >
-                      <div className="flex flex-col">
-                        <div className="flex flex-row items-center gap-2">
-                          <p className="text-sm font-medium">Exora AI</p>
-                          <div className="text-xs border border-input/50 bg-muted/50 rounded-full px-2">
-                            chat
-                          </div>
-                          <div className="text-xs text-orange-600 bg-white rounded-full px-2">
-                            Exora AI
-                          </div>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">
-                          Use local Ollama
-                        </p>
-                      </div>
-                    </CommandItem>
-                  )}
                   {models.map((model, index) => (
                     <CommandItem
                       disabled={!model?.isAvailable}
@@ -707,6 +725,88 @@ export const ScribeApiSetup = () => {
                     </Button>
                   </div>
                 </form>
+              ) : showManualLicenseEntry ? (
+                // MANUAL LICENSE ENTRY FORM
+                <form onSubmit={handleManualLicenseActivation} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">License Key</label>
+                    <p className="text-xs text-muted-foreground">
+                      Enter your license key (e.g., GHOST-OWNER-00000000 for admin)
+                    </p>
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="Enter license key"
+                    value={manualLicenseKey}
+                    onChange={(e) => {
+                      setManualLicenseKey(e.target.value.toUpperCase());
+                      setError(null);
+                    }}
+                    disabled={isLoading}
+                    className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors font-mono"
+                  />
+
+                  {/* Email field - optional hint for regular licenses */}
+                  {manualLicenseKey &&
+                  !manualLicenseKey.toUpperCase().includes("GHOST-OWNER") ? (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-sm font-medium">
+                          Email Address (Required for regular licenses)
+                        </label>
+                        <p className="text-xs text-muted-foreground">
+                          Email associated with this license
+                        </p>
+                      </div>
+                      <Input
+                        type="email"
+                        placeholder="Enter email"
+                        value={manualLicenseEmail}
+                        onChange={(e) => {
+                          setManualLicenseEmail(e.target.value);
+                          setError(null);
+                        }}
+                        disabled={isLoading}
+                        className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
+                      />
+                    </>
+                  ) : manualLicenseKey &&
+                    manualLicenseKey.toUpperCase().includes("GHOST-OWNER") ? (
+                    <div className="p-2 rounded bg-purple-500/10 border border-purple-500/30">
+                      <p className="text-xs text-purple-300 font-medium">
+                        ✓ Admin license detected - Email not required
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {error && <p className="text-xs text-red-500">{error}</p>}
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="submit"
+                      disabled={isLoading || !manualLicenseKey.trim()}
+                      className="flex-1 h-10"
+                    >
+                      {isLoading ? (
+                        <LoaderIcon className="h-4 w-4 animate-spin mr-2" />
+                      ) : null}
+                      Activate License
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setShowManualLicenseEntry(false);
+                        setManualLicenseKey("");
+                        setManualLicenseEmail("");
+                        setError(null);
+                      }}
+                      className="flex-1 h-10"
+                    >
+                      Back
+                    </Button>
+                  </div>
+                </form>
               ) : (
                 // REGISTER/LOGIN OPTIONS
                 <>
@@ -726,6 +826,17 @@ export const ScribeApiSetup = () => {
                       className="h-10"
                     >
                       Already have an account? Login
+                    </Button>
+                    <p className="text-xs text-center text-muted-foreground">or</p>
+                    <Button
+                      onClick={() => {
+                        setShowManualLicenseEntry(true);
+                        setError(null);
+                      }}
+                      variant="outline"
+                      className="h-10"
+                    >
+                      Have a license key? Enter it directly
                     </Button>
                     <p className="text-xs text-center text-muted-foreground">or</p>
                     <Button
