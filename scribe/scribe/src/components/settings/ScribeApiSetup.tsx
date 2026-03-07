@@ -34,6 +34,12 @@ interface ActivationResponse {
   };
 }
 
+interface ValidateLicenseResponse {
+  activated: boolean;
+  error?: string;
+  is_admin?: boolean;
+}
+
 interface StorageResult {
   license_key?: string;
   instance_id?: string;
@@ -198,9 +204,9 @@ export const ScribeApiSetup = () => {
 
   const handleManualLicenseActivation = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const licenseKeyTrimmed = manualLicenseKey.trim().toUpperCase();
-    
+
     if (!licenseKeyTrimmed) {
       setError("Please enter a license key");
       return;
@@ -211,99 +217,60 @@ export const ScribeApiSetup = () => {
     setSuccess(null);
 
     try {
-      // Check if it's an admin license
-      const isAdminLicense = licenseKeyTrimmed === "GHOST-OWNER-00000000";
-
-      if (isAdminLicense) {
-        // Admin license: no email validation needed
-        const instanceId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        
-        await invoke("secure_storage_save", {
-          items: [
-            {
-              key: LICENSE_KEY_STORAGE_KEY,
-              value: licenseKeyTrimmed,
-            },
-            {
-              key: INSTANCE_ID_STORAGE_KEY,
-              value: instanceId,
-            },
-          ],
-        });
-
-        setSuccess("Admin license activated successfully! 🎉");
-        setManualLicenseKey("");
-        setManualLicenseEmail("");
-        setShowManualLicenseEntry(false);
-        setScribeApiEnabled(true);
-
-        await loadLicenseStatus();
-        await getActiveLicenseStatus();
-      } else {
-        // Regular license: validate with backend
-        if (!manualLicenseEmail.trim()) {
-          setError("Email is required for regular licenses. Admin license does not need email.");
-          setIsLoading(false);
-          return;
+      const response = await fetch(
+        `http://localhost:8083/api/v1/auth/validate-license`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            license_key: licenseKeyTrimmed,
+            email: manualLicenseEmail.trim() || undefined,
+          }),
         }
+      );
 
-        // Verify license with backend
-        const response = await fetch(
-          `http://localhost:8083/api/v1/auth/validate-license`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              license_key: licenseKeyTrimmed,
-              email: manualLicenseEmail.trim(),
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          setError(
-            errorData.error || "Invalid license key or email combination"
-          );
-          setIsLoading(false);
-          return;
-        }
-
-        const data = await response.json();
-
-        if (!data.activated) {
-          setError(data.error || "License validation failed");
-          setIsLoading(false);
-          return;
-        }
-
-        // Store the license
-        const instanceId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        
-        await invoke("secure_storage_save", {
-          items: [
-            {
-              key: LICENSE_KEY_STORAGE_KEY,
-              value: licenseKeyTrimmed,
-            },
-            {
-              key: INSTANCE_ID_STORAGE_KEY,
-              value: instanceId,
-            },
-          ],
-        });
-
-        setSuccess("License activated successfully!");
-        setManualLicenseKey("");
-        setManualLicenseEmail("");
-        setShowManualLicenseEntry(false);
-        setScribeApiEnabled(true);
-
-        await loadLicenseStatus();
-        await getActiveLicenseStatus();
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.error || "Invalid license details");
+        return;
       }
+
+      const data: ValidateLicenseResponse = await response.json();
+
+      if (!data.activated) {
+        setError(data.error || "License validation failed");
+        return;
+      }
+
+      const instanceId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      await invoke("secure_storage_save", {
+        items: [
+          {
+            key: LICENSE_KEY_STORAGE_KEY,
+            value: licenseKeyTrimmed,
+          },
+          {
+            key: INSTANCE_ID_STORAGE_KEY,
+            value: instanceId,
+          },
+        ],
+      });
+
+      setSuccess(
+        data.is_admin
+          ? "Admin license activated successfully! 🎉"
+          : "License activated successfully!"
+      );
+      setManualLicenseKey("");
+      setManualLicenseEmail("");
+      setShowManualLicenseEntry(false);
+      setScribeApiEnabled(true);
+
+      await loadLicenseStatus();
+      await getActiveLicenseStatus();
     } catch (err) {
       console.error("License activation error:", err);
       setError(
@@ -731,7 +698,7 @@ export const ScribeApiSetup = () => {
                   <div className="space-y-1">
                     <label className="text-sm font-medium">License Key</label>
                     <p className="text-xs text-muted-foreground">
-                      Enter your license key (e.g., GHOST-OWNER-00000000 for admin)
+                      Enter your license key
                     </p>
                   </div>
                   <Input
@@ -746,38 +713,25 @@ export const ScribeApiSetup = () => {
                     className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors font-mono"
                   />
 
-                  {/* Email field - optional hint for regular licenses */}
-                  {manualLicenseKey &&
-                  !manualLicenseKey.toUpperCase().includes("GHOST-OWNER") ? (
-                    <>
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium">
-                          Email Address (Required for regular licenses)
-                        </label>
-                        <p className="text-xs text-muted-foreground">
-                          Email associated with this license
-                        </p>
-                      </div>
-                      <Input
-                        type="email"
-                        placeholder="Enter email"
-                        value={manualLicenseEmail}
-                        onChange={(e) => {
-                          setManualLicenseEmail(e.target.value);
-                          setError(null);
-                        }}
-                        disabled={isLoading}
-                        className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
-                      />
-                    </>
-                  ) : manualLicenseKey &&
-                    manualLicenseKey.toUpperCase().includes("GHOST-OWNER") ? (
-                    <div className="p-2 rounded bg-purple-500/10 border border-purple-500/30">
-                      <p className="text-xs text-purple-300 font-medium">
-                        ✓ Admin license detected - Email not required
-                      </p>
-                    </div>
-                  ) : null}
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">
+                      Email Address (Optional)
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      Some licenses require the associated email
+                    </p>
+                  </div>
+                  <Input
+                    type="email"
+                    placeholder="Enter email (if required)"
+                    value={manualLicenseEmail}
+                    onChange={(e) => {
+                      setManualLicenseEmail(e.target.value);
+                      setError(null);
+                    }}
+                    disabled={isLoading}
+                    className="h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
+                  />
 
                   {error && <p className="text-xs text-red-500">{error}</p>}
 

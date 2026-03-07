@@ -46,6 +46,12 @@ export async function shouldUseScribeAPI(
         return false;
       } catch {}
     }
+
+    // Single-picker mode: when provider dropdown is hidden (Scribe + license), model picker
+    // is the only source. Use Scribe if we have a model in storage.
+    const storage = await invoke<{ selected_Scribe_model?: string }>("secure_storage_get");
+    if (storage?.selected_Scribe_model?.trim()) return true;
+
     return false;
   } catch (error) {
     console.warn("Failed to check Scribe API availability:", error);

@@ -9,6 +9,7 @@ export * from "./Selection";
 export * from "./TextInput";
 export * from "./speech";
 export * from "./DragButton";
+export * from "./FloatingLogo";
 export * from "./GetLicense";
 export * from "./CustomCursor";
 export * from "./history";

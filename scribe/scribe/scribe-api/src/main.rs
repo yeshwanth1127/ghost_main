@@ -117,7 +117,7 @@ async fn create_router(pool: PgPool, config: Config) -> Router {
     let license_service = services::license::LicenseService::new(pool.clone());
     let openrouter_service = services::openrouter::OpenRouterService::new();
     let whisper_service = services::whisper::WhisperService::new();
-    let usage_service = services::usage::UsageService::new(pool.clone());
+    let usage_service = services::usage::UsageService::new(pool.clone(), config.clone());
     let model_router = services::model_router::ModelRouter::new(usage_service.clone());
 
     let gateway_state = gateway_state::GatewayState::new();

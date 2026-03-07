@@ -3,6 +3,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use crate::config::Config;
 use crate::models::{
     CostCalculation, Message, ModelPricing, MonthlyUsage, TokenLimitCheck, UsageError,
     UsageHistoryItem, UsageRecord, UsageStats, ModelUsageBreakdown, User,
@@ -13,19 +14,26 @@ const USD_TO_INR_RATE: f64 = 84.0; // Update periodically
 #[derive(Clone)]
 pub struct UsageService {
     pool: PgPool,
+    config: Config,
 }
 
 impl UsageService {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, config: Config) -> Self {
+        Self { pool, config }
     }
 
     // ============================================
     // MODEL PRICING
     // ============================================
 
-    /// Get pricing for a specific model
+    /// Get pricing for a specific model from OpenRouter with database fallback
     pub async fn get_model_pricing(&self, model: &str) -> Result<ModelPricing, UsageError> {
+        // Try to fetch from OpenRouter first
+        if let Ok(pricing) = self.fetch_pricing_from_openrouter(model).await {
+            return Ok(pricing);
+        }
+
+        // Fall back to database pricing
         let pricing = sqlx::query_as::<_, ModelPricing>(
             "SELECT * FROM model_pricing WHERE model = $1 AND active = TRUE"
         )
@@ -35,6 +43,76 @@ impl UsageService {
         .ok_or_else(|| UsageError::ModelPricingNotFound(model.to_string()))?;
 
         Ok(pricing)
+    }
+
+    /// Fetch pricing from OpenRouter API
+    async fn fetch_pricing_from_openrouter(&self, model: &str) -> Result<ModelPricing, UsageError> {
+        let client = reqwest::Client::new();
+        let url = format!("{}/models", self.config.openrouter_base_url);
+
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.config.openrouter_api_key))
+            .header("HTTP-Referer", "https://exora.solutions")
+            .header("X-Title", "Ghost API")
+            .send()
+            .await
+            .map_err(|e| UsageError::ModelPricingNotFound(format!("Failed to fetch from OpenRouter: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(UsageError::ModelPricingNotFound("OpenRouter API error".to_string()));
+        }
+
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| UsageError::ModelPricingNotFound(format!("Failed to parse OpenRouter response: {}", e)))?;
+
+        let models = json
+            .get("data")
+            .and_then(|d| d.as_array())
+            .ok_or_else(|| UsageError::ModelPricingNotFound("Invalid OpenRouter response format".to_string()))?;
+
+        // Find matching model
+        for m in models {
+            if let Some(model_id) = m.get("id").and_then(|id| id.as_str()) {
+                if model_id == model {
+                    let pricing = m
+                        .get("pricing")
+                        .and_then(|p| p.as_object())
+                        .ok_or_else(|| UsageError::ModelPricingNotFound("Missing pricing in model".to_string()))?;
+
+                    let input_cost_str = pricing
+                        .get("prompt")
+                        .and_then(|p| p.as_str())
+                        .unwrap_or("0");
+                    let output_cost_str = pricing
+                        .get("completion")
+                        .and_then(|c| c.as_str())
+                        .unwrap_or("0");
+
+                    let input_cost: Decimal = input_cost_str
+                        .parse()
+                        .unwrap_or_else(|_| Decimal::ZERO);
+                    let output_cost: Decimal = output_cost_str
+                        .parse()
+                        .unwrap_or_else(|_| Decimal::ZERO);
+
+                    return Ok(ModelPricing {
+                        id: uuid::Uuid::new_v4(),
+                        model: model.to_string(),
+                        provider: model.split('/').next().unwrap_or("unknown").to_string(),
+                        input_cost_per_1m: input_cost,
+                        output_cost_per_1m: output_cost,
+                        active: true,
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                    });
+                }
+            }
+        }
+
+        Err(UsageError::ModelPricingNotFound(model.to_string()))
     }
 
     /// Get all active model pricing

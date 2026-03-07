@@ -21,6 +21,7 @@ export const useSettings = () => {
     onSetSelectedAIProvider,
     onSetSelectedSttProvider,
     hasActiveLicense,
+    ScribeApiEnabled,
   } = useApp();
   const { resizeWindow } = useWindowResize();
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -125,5 +126,6 @@ export const useSettings = () => {
     variables,
     sttVariables,
     hasActiveLicense,
+    ScribeApiEnabled,
   };
 };

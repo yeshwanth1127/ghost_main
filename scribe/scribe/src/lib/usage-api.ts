@@ -59,16 +59,10 @@ export interface ModelPricing {
 }
 
 // ============================================
-// CONSTANTS
-// ============================================
-
-const USD_TO_INR = 84; // Match backend rate for consistency
-
-// ============================================
 // API CLIENT
 // ============================================
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8083';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 /**
  * Get current month's usage statistics for a user
@@ -115,42 +109,6 @@ export async function getUserUsageHistory(
   } catch (error) {
     console.error('Error fetching usage history:', error);
     throw error;
-  }
-}
-
-/**
- * Record usage from client (e.g. direct Ollama/Exora).
- * Call after a direct provider response completes.
- */
-export async function recordUsageFromClient(
-  licenseKey: string,
-  model: string,
-  provider: string,
-  promptTokens: number,
-  completionTokens: number
-): Promise<void> {
-  try {
-    const response = await tauriFetch(`${API_BASE_URL}/api/v1/usage/record`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-license-key': licenseKey,
-      },
-      body: JSON.stringify({
-        model,
-        provider,
-        prompt_tokens: promptTokens,
-        completion_tokens: completionTokens,
-      }),
-    });
-    if (!response.ok) {
-      const errText = await response.text();
-      console.warn('[usage-api] Failed to record usage:', response.status, errText);
-    } else {
-      console.log('[usage-api] Usage recorded successfully');
-    }
-  } catch (error) {
-    console.warn('[usage-api] Error recording usage:', error);
   }
 }
 
@@ -204,20 +162,12 @@ export async function getModelPricing(): Promise<ModelPricing[]> {
 // ============================================
 
 /**
- * Format tokens - show exact numbers for 1–9999, then K/M for larger
+ * Format tokens in human-readable format
  */
 export function formatTokens(tokens: number): string {
-  if (tokens < 10000) return `${tokens}`;
+  if (tokens < 1000) return `${tokens}`;
   if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}K`;
   return `${(tokens / 1000000).toFixed(2)}M`;
-}
-
-/**
- * Convert USD to INR
- */
-export function usdToInr(usd: number | string): number {
-  const num = typeof usd === 'string' ? parseFloat(usd) : usd;
-  return isNaN(num) ? 0 : num * USD_TO_INR;
 }
 
 /**

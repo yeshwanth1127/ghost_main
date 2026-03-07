@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { TrendingUp, AlertCircle, Zap, Clock, Copy, Check } from 'lucide-react';
+import { TrendingUp, AlertCircle, DollarSign, Zap, Clock, Copy, Check } from 'lucide-react';
 import { Header, Button } from '@/components';
 import {
   getUserUsageStats,
   getUserUsageHistory,
   formatTokens,
+  formatCurrency,
   getPlanDisplayName,
   getPlanColor,
   formatRelativeDate,
@@ -75,8 +76,8 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
     return (
       <div id="usage-dashboard" className="space-y-3">
         <Header
-          title="Token Usage"
-          description="Track tokens sent (context) and received from AI."
+          title="Usage & Billing"
+          description="Track your AI usage, token consumption, and costs."
           isMainTitle
         />
         <div className="flex items-center justify-center p-8">
@@ -109,8 +110,8 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
     return (
       <div id="usage-dashboard" className="space-y-3">
         <Header
-          title="Token Usage"
-          description="Track tokens sent (context) and received from AI."
+          title="Usage & Billing"
+          description="Track your AI usage, token consumption, and costs."
           isMainTitle
         />
         <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-md">
@@ -157,13 +158,13 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
     <div id="usage-dashboard" className="space-y-4">
       {/* Header */}
       <Header
-        title="Token Usage"
-        description="Track tokens sent (context) and received from AI."
+        title="Usage & Billing"
+        description="Track your AI usage, token consumption, and costs."
         isMainTitle
       />
 
       {/* Plan Badge */}
-      <div className="flex items-center justify-between p-4 bg-secondary/20 border rounded-lg">
+      <div className="flex items-center justify-between p-3 bg-secondary/20 border rounded-md">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">Current Plan:</span>
           <span className={`text-sm font-bold ${getPlanColor(stats.plan)}`}>
@@ -226,16 +227,11 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
           </span>
         </div>
 
-        {/* Progress Bar - min 2% width when any usage so 1–5000 tokens are visible */}
-        <div className="h-4 bg-secondary/30 rounded-full overflow-hidden">
+        {/* Progress Bar */}
+        <div className="h-3 bg-secondary/30 rounded-full overflow-hidden">
           <div
             className={`h-full ${progressBarColor} transition-all duration-300`}
-            style={{
-              width:
-                stats.tokens_used > 0
-                  ? `${Math.min(Math.max(usagePercentage, 2), 100)}%`
-                  : '0%',
-            }}
+            style={{ width: `${Math.min(usagePercentage, 100)}%` }}
           ></div>
         </div>
 
@@ -244,34 +240,36 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
         </p>
       </div>
 
-      {/* Token Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="p-4 bg-secondary/20 border rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap className="h-4 w-4 text-primary" />
-            <span className="text-sm text-muted-foreground">Total Tokens</span>
+      {/* Cost Summary */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="p-3 bg-secondary/20 border rounded-md">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="h-4 w-4 text-green-600" />
+            <span className="text-xs text-muted-foreground">Cost (USD)</span>
           </div>
-          <p className="text-xl font-bold">{formatTokens(stats.tokens_used)}</p>
+          <p className="text-lg font-bold">
+            {formatCurrency(stats.total_cost_usd, 'USD')}
+          </p>
         </div>
 
-        <div className="p-4 bg-secondary/20 border rounded-lg">
-          <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Requests</span>
+        <div className="p-3 bg-secondary/20 border rounded-md">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="h-4 w-4 text-blue-600" />
+            <span className="text-xs text-muted-foreground">Requests</span>
           </div>
-          <p className="text-xl font-bold">{stats.total_requests}</p>
+          <p className="text-lg font-bold">{stats.total_requests}</p>
         </div>
       </div>
 
-      {/* Model Breakdown - tokens only */}
+      {/* Model Breakdown */}
       {stats.model_breakdown.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <h4 className="text-sm font-medium">Model Usage Breakdown</h4>
           <div className="space-y-2">
             {stats.model_breakdown.map((model, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between p-3 bg-secondary/10 border rounded-lg text-sm"
+                className="flex items-center justify-between p-2 bg-secondary/10 border rounded-md text-xs"
               >
                 <div>
                   <p className="font-medium">
@@ -282,7 +280,9 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
                     requests
                   </p>
                 </div>
-                <span className="font-mono">{formatTokens(model.tokens)}</span>
+                <span className="font-mono">
+                  {formatCurrency(model.cost_usd, 'USD')}
+                </span>
               </div>
             ))}
           </div>
@@ -291,13 +291,13 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
 
       {/* Recent Activity */}
       {history.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <h4 className="text-sm font-medium">Recent Activity</h4>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
+          <div className="space-y-1 max-h-48 overflow-y-auto">
             {history.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between p-3 bg-secondary/10 border rounded-lg text-sm hover:bg-secondary/20 transition-colors"
+                className="flex items-center justify-between p-2 bg-secondary/10 border rounded-md text-xs hover:bg-secondary/20 transition-colors"
               >
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">
@@ -308,13 +308,10 @@ export const UsageDashboard = ({ userId }: UsageDashboardProps) => {
                     <span>{formatRelativeDate(item.created_at)}</span>
                   </div>
                 </div>
-                <div className="text-right ml-2 text-xs">
-                  <p className="font-mono">
-                    In: {formatTokens(item.prompt_tokens)} · Out:{' '}
-                    {formatTokens(item.completion_tokens)}
-                  </p>
+                <div className="text-right ml-2">
+                  <p className="font-mono">{formatTokens(item.total_tokens)}</p>
                   <p className="text-muted-foreground">
-                    Total: {formatTokens(item.total_tokens)}
+                    {formatCurrency(item.cost_usd, 'USD')}
                   </p>
                 </div>
               </div>

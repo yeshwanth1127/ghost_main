@@ -199,6 +199,11 @@ pub fn run() {
         let builder = builder.invoke_handler(tauri::generate_handler![
             get_app_version,
             window::set_window_height,
+            window::set_window_size,
+            window::set_window_position,
+            window::get_window_position,
+            window::get_bottom_right_position_for_size,
+            window::center_main_window,
             capture::capture_to_base64,
             capture::capture_screen_behind_ghost,
             capture::start_screen_capture,

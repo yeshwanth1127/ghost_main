@@ -12,6 +12,7 @@ import {
   Button,
   AgentView,
   AgentErrorBoundary,
+  FloatingLogo,
 } from "@/components";
 import { useApp } from "@/hooks";
 import { useApp as useAppContext } from "@/contexts";
@@ -33,6 +34,8 @@ const App = () => {
   const [appMode, setAppMode] = useState<"chat" | "agent" | null>(getInitialMode);
   const {
     isHidden,
+    isCollapsed,
+    handleExpand,
     systemAudio,
     handleSelectConversation,
     handleNewConversation,
@@ -124,6 +127,15 @@ const App = () => {
             </AgentErrorBoundary>
           </div>
         </Card>
+      </div>
+    );
+  }
+
+  // Show collapsed logo mode (floating logo only)
+  if (isCollapsed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-transparent">
+        <FloatingLogo onExpand={handleExpand} />
       </div>
     );
   }

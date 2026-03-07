@@ -72,11 +72,14 @@ pub async fn list_models(State(state): State<AppState>) -> Result<Json<ModelsRes
                 pricing.get("completion").and_then(|c| c.as_str()).unwrap_or("N/A"),
             );
 
+            // Extract short model name (e.g., "gpt-4o-mini" from "openai/gpt-4o-mini")
+            let model_short_name = id.split('/').nth(1).unwrap_or(&id).to_string();
+            
             Some(Model {
                 provider,
                 name: name.clone(),
                 id: id.clone(),
-                model: id,
+                model: model_short_name,
                 description,
                 modality,
                 is_available: m.get("permission")

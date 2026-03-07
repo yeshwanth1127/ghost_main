@@ -1,6 +1,6 @@
 import { Dispatch, SetStateAction } from "react";
 import { ScreenshotConfig, TYPE_PROVIDER } from "@/types";
-import { CursorType, CustomizableState } from "@/lib/storage";
+import { CursorType, CustomizableState, VoiceActivationState } from "@/lib/storage";
 
 export type IContextType = {
   systemPrompt: string;
@@ -59,4 +59,6 @@ export type IContextType = {
   ScribeApiEnabled: boolean;
   setScribeApiEnabled: (enabled: boolean) => void;
   isAdmin: boolean;
+  voiceActivation: VoiceActivationState;
+  updateVoiceActivation: (updates: Partial<VoiceActivationState>) => void;
 };

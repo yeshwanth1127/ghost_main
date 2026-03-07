@@ -529,7 +529,7 @@ pub async fn chat_stream(
                             full_response.push_str(&content);
                             tracing::info!("📤 Emitting chunk #{}: {} chars, content: {:?}", 
                                 *chunk_count, content.len(), content.chars().take(100).collect::<String>());
-                            let _ = app.emit_to("main", "chat_stream_chunk", &content);
+                            let _ = app.emit("chat_stream_chunk", &content);
                         } else {
                             tracing::warn!("⚠️ Parsed SSE but content empty. json_len={}", json_str.len());
                         }
@@ -638,8 +638,8 @@ pub async fn chat_stream(
                     Err(text_err) => {
                         let msg = format!("Stream decode failed and fallback decode failed: {}", text_err);
                         eprintln!("[chat_stream] ❌ {}", msg);
-                        let _ = app.emit_to("main", "chat_stream_chunk", &msg);
-                        let _ = app.emit_to("main", "chat_stream_complete", &msg);
+                        let _ = app.emit("chat_stream_chunk", &msg);
+                        let _ = app.emit("chat_stream_complete", &msg);
                         return Err(msg);
                     }
                 };
@@ -654,20 +654,20 @@ pub async fn chat_stream(
                     if let Ok(parsed) = serde_json::from_str::<ChatResponse>(&fallback_text) {
                         if let Some(message) = parsed.message {
                             full_response = message;
-                            let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+                            let _ = app.emit("chat_stream_chunk", &full_response);
                             break;
                         }
                     }
 
                     if !fallback_text.trim().is_empty() {
                         full_response = fallback_text;
-                        let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+                        let _ = app.emit("chat_stream_chunk", &full_response);
                         break;
                     }
 
                     let msg = "Fallback succeeded but returned empty body".to_string();
-                    let _ = app.emit_to("main", "chat_stream_chunk", &msg);
-                    let _ = app.emit_to("main", "chat_stream_complete", &msg);
+                    let _ = app.emit("chat_stream_chunk", &msg);
+                    let _ = app.emit("chat_stream_complete", &msg);
                     return Err(msg);
                 }
 
@@ -702,7 +702,7 @@ pub async fn chat_stream(
             full_response = buffer;
         }
         if !full_response.is_empty() {
-            let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+            let _ = app.emit("chat_stream_chunk", &full_response);
         }
     }
 
@@ -756,11 +756,11 @@ pub async fn chat_stream(
             if let Ok(parsed) = serde_json::from_str::<ChatResponse>(&fallback_text) {
                 if let Some(message) = parsed.message {
                     full_response = message;
-                    let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+                    let _ = app.emit("chat_stream_chunk", &full_response);
                 }
             } else if !fallback_text.trim().is_empty() {
                 full_response = fallback_text;
-                let _ = app.emit_to("main", "chat_stream_chunk", &full_response);
+                let _ = app.emit("chat_stream_chunk", &full_response);
             }
         } else {
             tracing::error!("❌ Fallback request failed: {}", fallback_text);
@@ -769,11 +769,11 @@ pub async fn chat_stream(
 
     if full_response.trim().is_empty() {
         let msg = "No response generated from stream or fallback".to_string();
-        let _ = app.emit_to("main", "chat_stream_chunk", &msg);
+        let _ = app.emit("chat_stream_chunk", &msg);
         full_response = msg;
     }
     
-    let _ = app.emit_to("main", "chat_stream_complete", &full_response);
+    let _ = app.emit("chat_stream_complete", &full_response);
 
     Ok(full_response)
 }

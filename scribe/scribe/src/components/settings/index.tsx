@@ -17,7 +17,6 @@ import { AutostartToggle } from "./AutostartToggle";
 import { AppIconToggle } from "./AppIconToggle";
 import { AlwaysOnTopToggle } from "./AlwaysOnTopToggle";
 import { TitleToggle } from "./TitleToggle";
-import { AIProviders } from "./ai-configs";
 import { STTProviders } from "./stt-configs";
 import { DeleteChats } from "./DeleteChats";
 import { ScribeApiSetup } from "./ScribeApiSetup";
@@ -28,6 +27,7 @@ import { CursorSelection } from "./Cursor";
 import { ApplyForLeave } from "./ApplyForLeave";
 import { ModeToggle } from "./ModeToggle";
 import { UsageDashboard } from "./UsageDashboard";
+import { VoiceActivation } from "./VoiceActivation";
 
 export const Settings = () => {
   const settings = useSettings();
@@ -103,109 +103,75 @@ export const Settings = () => {
       <PopoverContent
         align="end"
         side="bottom"
-        className="select-none w-[min(896px,calc(100vw-2rem))] max-w-4xl min-h-[70vh] p-0 border border-input/50 rounded-xl overflow-hidden shadow-xl"
-        sideOffset={12}
-        collisionPadding={16}
-        avoidCollisions={true}
+        className="select-none w-[600px] max-w-[90vw] p-0 border border-input/50 rounded-lg overflow-hidden"
+        sideOffset={8}
       >
-        <ScrollArea className="h-[calc(100vh-10rem)] min-h-[60vh]">
+        <ScrollArea className="h-[calc(100vh-9rem)]">
           <div className="flex min-h-full">
-            <div className="p-6 w-full flex flex-col divide-y divide-input/30">
+            <div className="p-6 space-y-6 w-full flex flex-col justify-center">
             {/* Settings Navigation */}
-            <section className="pt-0 pb-5">
-              <SettingsNavigation />
-            </section>
+            <SettingsNavigation />
 
             {/* Usage & Billing Dashboard */}
-            <section className="py-5">
-              <UsageDashboard userId={userId} />
-            </section>
+            <UsageDashboard userId={userId} />
 
-            {/* Ghost API Setup */}
-            <section className="py-5">
-              <ScribeApiSetup />
-            </section>
+            {/* Ghost API Setup - includes the single model picker (Ghost supports X models) */}
+            <ScribeApiSetup />
 
-            {/* Provider Selection */}
-            <section className="py-5">
-              <AIProviders {...settings} />
-            </section>
+            {/* AI Providers section removed - app requires license; model picker is the only way to select */}
 
             {/* STT Providers */}
-            <section className="py-5">
-              <STTProviders {...settings} />
-            </section>
+            <STTProviders {...settings} />
 
             {/* System Prompt */}
-            <section className="py-5">
-              <SystemPrompt {...settings} />
-            </section>
+            <SystemPrompt {...settings} />
 
             {/* Theme */}
-            <section className="py-5">
-              <Theme />
-            </section>
+            <Theme />
 
             {/* Screenshot Configs */}
-            <section className="py-5">
-              <ScreenshotConfigs {...settings} />
-            </section>
+            <ScreenshotConfigs {...settings} />
 
             {/* Cursor Selection */}
-            <section className="py-5">
-              <CursorSelection />
-            </section>
+            <CursorSelection />
 
             {/* Mode Toggle */}
-            <section className="py-5">
-              <ModeToggle />
-            </section>
+            <ModeToggle />
 
             {/* Keyboard Shortcuts */}
-            <section className="py-5">
-              <ShortcutManager />
-            </section>
+            <ShortcutManager />
 
             {/* Audio Selection */}
-            <section className="py-5">
-              <AudioSelection />
-            </section>
+            <AudioSelection />
 
             {/* Autostart Toggle */}
-            <section className="py-5">
-              <AutostartToggle />
-            </section>
+            <AutostartToggle />
 
             {/* App Icon Toggle */}
-            <section className="py-5">
-              <AppIconToggle />
-            </section>
+            <AppIconToggle />
 
             {/* Always On Top Toggle */}
-            <section className="py-5">
-              <AlwaysOnTopToggle />
-            </section>
+            <AlwaysOnTopToggle />
+
+            {/* Voice Activation */}
+            <VoiceActivation />
 
             {/* Title Toggle */}
-            <section className="py-5">
-              <TitleToggle />
-            </section>
+            <TitleToggle />
 
             {/* Delete Chat History */}
-            <section className="py-5">
-              <DeleteChats {...settings} />
-            </section>
+            <DeleteChats {...settings} />
 
             {/* Apply for Leave */}
-            <section className="py-5 pb-0">
-              <ApplyForLeave />
-            </section>
+            <ApplyForLeave />
             </div>
           </div>
+
+          {/* Footer attribution removed as requested */}
         </ScrollArea>
 
         {/* Footer always visible at the bottom */}
-        <div className="border-t border-input/30 px-6 py-4 bg-background">
+        <div className="border-t border-input/50 px-6 py-4 bg-background">
           <Disclaimer />
         </div>
       </PopoverContent>

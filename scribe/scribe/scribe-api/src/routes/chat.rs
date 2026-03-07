@@ -57,11 +57,13 @@ pub async fn chat(
     let provider = headers
         .get("provider")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
     let model_requested = headers
         .get("model")
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
     
     tracing::info!("   Provider: {:?}, Model: {:?}", provider, model_requested);
 
@@ -98,14 +100,20 @@ pub async fn chat(
         // Route model based on user plan
         let task_type = ModelRouter::classify_task(&request.user_message);
         let requested_model = if !model_requested.is_empty() && !model_requested.eq_ignore_ascii_case("none") {
-            Some(model_requested.to_string())
+            // Extract short model name if it contains provider prefix (e.g., "openai/gpt-4o-mini" -> "gpt-4o-mini")
+            let short_model = if model_requested.contains('/') {
+                model_requested.split('/').nth(1).unwrap_or(model_requested.as_str()).to_string()
+            } else {
+                model_requested.to_string()
+            };
+            Some(short_model)
         } else {
             None
         };
 
         match state.model_router.route_model(uid, requested_model, task_type).await {
             Ok(routed_model) => {
-                let was_routed = Some(routed_model.as_str()) != Some(model_requested);
+                let was_routed = Some(routed_model.as_str()) != Some(model_requested.as_str());
                 tracing::info!("✅ Model routed: {} (routed_by_plan: {})", routed_model, was_routed);
                 (routed_model, was_routed)
             }
@@ -121,14 +129,12 @@ pub async fn chat(
     };
 
     // If model already includes provider prefix (contains '/'), use as-is for OpenRouter.
-    // Otherwise, use ModelRouter::get_provider to map model -> correct OpenRouter provider
-    // (e.g. gpt-4o-mini -> openai, not the request's provider header which may be wrong
-    // when model was routed by plan, e.g. nvidia/gpt-4o-mini is invalid).
+    // Otherwise, use the provider header sent from desktop to build the full model ID.
+    // This ensures we support all 346 models, not just the ones with recognizable prefixes.
     let model_id = if model.contains('/') {
         Some(model.clone())
-    } else if !model.is_empty() {
-        let openrouter_provider = ModelRouter::get_provider(&model);
-        Some(format!("{}/{}", openrouter_provider, model))
+    } else if !model.is_empty() && !provider.is_empty() && !provider.eq_ignore_ascii_case("none") {
+        Some(format!("{}/{}", provider, model))
     } else {
         None
     };
@@ -303,8 +309,8 @@ pub async fn chat(
                 let usage_record = UsageRecord {
                     user_id: uid,
                     license_key: license_key.clone(),
-                    model: model.clone(),
-                    provider: ModelRouter::get_provider(&model),
+                    model: model_id.clone().unwrap_or_else(|| model.clone()),
+                    provider: provider.to_string(),
                     prompt_tokens,
                     completion_tokens,
                     conversation_id: None,

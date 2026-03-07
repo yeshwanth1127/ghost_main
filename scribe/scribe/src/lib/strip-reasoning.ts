@@ -29,9 +29,9 @@ const REASONING_PATTERNS = [
 
 const REPLY_STARTS = /^(Hi|Hello|Hey|Sure|Yes|No|Okay|Alright|Thanks|Got it)[!.]?\s/i;
 
-/** Strip assistantgen-xxx IDs that some APIs append */
+/** Strip assistantgen-xxx IDs that some APIs append to the end of responses */
 function stripAssistantGen(text: string): string {
-  return text.replace(/\n?assistantgen-[a-zA-Z0-9_-]+\s*$/g, "").trim();
+  return text.replace(/\s*assistantgen-[a-zA-Z0-9_-]+\s*$/g, "").trim();
 }
 
 /** Check if text contains reasoning (internal model thinking) */
@@ -45,17 +45,23 @@ function hasReasoning(text: string): boolean {
  * Otherwise return the content as-is.
  */
 export function stripReasoningFromContent(content: string): string {
-  if (!content || content.length < 5) return content;
+  if (!content || content.length < 5) return stripAssistantGen(content);
 
   let s = stripAssistantGen(content).trim();
-  if (!s) return content;
+  if (!s) return stripAssistantGen(content);
 
   // Strong signal: assistantgen- means we have the reasoning+reply format
   const hasAssistantGen = /assistantgen-/.test(content);
 
   // Check for reasoning anywhere in first 300 chars (not just first line)
   const hasReasoningContent = hasReasoning(s) || hasAssistantGen;
-  if (!hasReasoningContent) return content;
+  if (!hasReasoningContent) return stripAssistantGen(content);
+
+  // Content has code blocks - never strip; intros like "I'll create..." are legitimate.
+  // Check both complete blocks (```...```) and partial (streaming may not have closing ``` yet)
+  if (/```[\s\S]*```/.test(s) || /```[\w]*\s*\n/.test(s)) {
+    return stripAssistantGen(content);
+  }
 
   const lines = s.split(/\r?\n/);
 
@@ -69,29 +75,23 @@ export function stripReasoningFromContent(content: string): string {
   }
 
   if (lastReplyIndex >= 0) {
-    return lines.slice(lastReplyIndex).join("\n").trim();
+    return stripAssistantGen(lines.slice(lastReplyIndex).join("\n").trim());
   }
 
   // Fallback: last line ending with ? or ! that's short (the actual reply)
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (line.length > 0 && line.length < 200 && (line.endsWith("?") || line.endsWith("!"))) {
-      return line;
+      return stripAssistantGen(line);
     }
   }
 
   // Fallback: match "Hello! How can I assist..." anywhere (reply after reasoning)
   const replyMatch = s.match(/((?:Hi|Hello|Hey)[!.]?\s+How can I (?:assist|help) you[^.!?]*[!?])/i);
   if (replyMatch) {
-    return replyMatch[1].trim();
-  }
-
-  // Content has code blocks - likely a code response; don't strip (phrases like
-  // "I'll create..." or "Let me show..." are legitimate intros, not reasoning)
-  if (/```[\s\S]*```/.test(s)) {
-    return content;
+    return stripAssistantGen(replyMatch[1].trim());
   }
 
   // Can't confidently extract reply - return original to avoid wiping code/answers
-  return content;
+  return stripAssistantGen(content);
 }

@@ -55,6 +55,12 @@ pub fn position_window_top_center(
     Ok(())
 }
 
+#[tauri::command]
+pub fn center_main_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    position_window_top_center(&window, TOP_OFFSET)
+        .map_err(|e| format!("Failed to center window: {}", e))
+}
+
 /// Future function for centering window completely (both X and Y)
 #[allow(dead_code)]
 pub fn center_window_completely(window: &WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
@@ -97,4 +103,44 @@ pub fn set_window_size(window: tauri::WebviewWindow, width: u32, height: u32) ->
         .map_err(|e| format!("Failed to resize window: {}", e))?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_window_position(
+    window: tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+) -> Result<(), String> {
+    use tauri::{PhysicalPosition, Position};
+
+    window
+        .set_position(Position::Physical(PhysicalPosition { x, y }))
+        .map_err(|e| format!("Failed to set window position: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_window_position(window: tauri::WebviewWindow) -> Result<(i32, i32), String> {
+    let pos = window
+        .outer_position()
+        .map_err(|e| format!("Failed to get window position: {}", e))?;
+    Ok((pos.x, pos.y))
+}
+
+#[tauri::command]
+pub fn get_bottom_right_position_for_size(
+    window: tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+) -> Result<(i32, i32), String> {
+    let monitor = window
+        .primary_monitor()
+        .map_err(|e| format!("Failed to get primary monitor: {}", e))?
+        .ok_or("No primary monitor")?;
+    let monitor_size = monitor.size();
+    let monitor_pos = monitor.position();
+    let x = monitor_pos.x + (monitor_size.width as i32) - (width as i32);
+    let y = monitor_pos.y + (monitor_size.height as i32) - (height as i32);
+    Ok((x, y))
 }

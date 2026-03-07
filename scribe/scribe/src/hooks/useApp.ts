@@ -1,13 +1,82 @@
-import { useEffect, useState } from "react";
-import { useTitles, useSystemAudio } from "@/hooks";
+import { useEffect, useState, useCallback } from "react";
+import { useTitles, useSystemAudio, useInactivity, useVoiceActivation } from "@/hooks";
+import { useApp as useAppContext } from "@/contexts";
 import { listen } from "@tauri-apps/api/event";
 import { safeLocalStorage, migrateLocalStorageToSQLite } from "@/lib";
-import { getShortcutsConfig } from "@/lib/storage";
+import { getShortcutsConfig, getVoiceActivationState, updateLogoPosition } from "@/lib/storage";
 import { invoke } from "@tauri-apps/api/core";
+
+const LOGO_SIZE = 80;
+const FULL_WIDTH = 1200;
+const FULL_HEIGHT = 800;
+const INACTIVITY_TIMEOUT_MS = 25000;
 
 export const useApp = () => {
   const systemAudio = useSystemAudio();
   const [isHidden, setIsHidden] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const { voiceActivation: voiceActivationState } = useAppContext() as any;
+  const autoCollapseEnabled = voiceActivationState?.autoCollapseEnabled ?? true;
+  const voiceEnabled = voiceActivationState?.enabled ?? true;
+  const customPhrase = voiceActivationState?.customPhrase ?? "";
+
+  const handleCollapse = useCallback(async () => {
+    try {
+      const { logoPosition } = getVoiceActivationState();
+      let x: number;
+      let y: number;
+      if (logoPosition) {
+        x = logoPosition.x;
+        y = logoPosition.y;
+      } else {
+        const pos = await invoke<[number, number]>(
+          "get_bottom_right_position_for_size",
+          { width: LOGO_SIZE, height: LOGO_SIZE }
+        );
+        x = pos[0];
+        y = pos[1];
+      }
+      await invoke("set_window_size", { width: LOGO_SIZE, height: LOGO_SIZE });
+      await invoke("set_window_position", { x, y });
+      await invoke("set_always_on_top", { enabled: true });
+      setIsCollapsed(true);
+    } catch (e) {
+      console.error("Failed to collapse:", e);
+    }
+  }, []);
+
+  const handleExpand = useCallback(async () => {
+    try {
+      if (isCollapsed) {
+        const [x, y] = await invoke<[number, number]>("get_window_position");
+        updateLogoPosition(x, y);
+      }
+      await invoke("set_window_size", { width: FULL_WIDTH, height: FULL_HEIGHT });
+      await invoke("center_main_window");
+      await invoke("set_always_on_top", { enabled: false });
+      setIsCollapsed(false);
+      invoke("force_show_window").catch(() => {});
+    } catch (e) {
+      console.error("Failed to expand:", e);
+      setIsCollapsed(false);
+    }
+  }, [isCollapsed]);
+
+  useInactivity(handleCollapse, {
+    timeoutMs: INACTIVITY_TIMEOUT_MS,
+    enabled:
+      autoCollapseEnabled &&
+      !isCollapsed &&
+      !isHidden &&
+      systemAudio?.capturing !== true,
+  });
+
+  useVoiceActivation(handleExpand, {
+    enabled: isCollapsed && voiceEnabled,
+    customPhrase: customPhrase || undefined,
+  });
+
   // Initialize title management
   useTitles();
 
@@ -109,6 +178,8 @@ export const useApp = () => {
   return {
     isHidden,
     setIsHidden,
+    isCollapsed,
+    handleExpand,
     handleSelectConversation,
     handleNewConversation,
     systemAudio,

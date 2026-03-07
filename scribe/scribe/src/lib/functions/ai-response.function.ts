@@ -16,6 +16,8 @@ import { shouldUseScribeAPI } from "./scribe.api";
 import { CHUNK_POLL_INTERVAL_MS } from "../chat-constants";
 import { GHOST_CAPABILITIES_KNOWLEDGE } from "@/config/ghost-capabilities";
 
+const SELECTED_SCRIBE_MODEL_KEY = "selected_Scribe_model";
+
 // Scribe AI streaming function
 async function* fetchScribeAIResponse(params: {
   systemPrompt?: string;
@@ -23,6 +25,7 @@ async function* fetchScribeAIResponse(params: {
   imagesBase64?: string[];
   history?: Message[];
   signal?: AbortSignal;
+  selectedProvider?: { provider: string };
 }): AsyncIterable<string> {
   try {
     const {
@@ -31,11 +34,35 @@ async function* fetchScribeAIResponse(params: {
       imagesBase64 = [],
       history = [],
       signal,
+      selectedProvider,
     } = params;
 
     // Check if already aborted before starting
     if (signal?.aborted) {
       return;
+    }
+
+    // CRITICAL: When user selected gpt-4o-mini in the provider dropdown, ensure storage
+    // has gpt-4o-mini before chat_stream reads it. The Ghost Access model picker can
+    // overwrite storage with a different model (e.g. gpt-4o), causing requests to go
+    // to the wrong model despite the user's selection.
+    if (selectedProvider?.provider === "gpt-4o-mini") {
+      const model = {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        name: "GPT 4o Mini",
+        id: "openai/gpt-4o-mini",
+        description: "",
+        modality: "text",
+        isAvailable: true,
+      };
+      try {
+        await invoke("secure_storage_save", {
+          items: [{ key: SELECTED_SCRIBE_MODEL_KEY, value: JSON.stringify(model) }],
+        });
+      } catch (e) {
+        console.error("[Scribe API] Failed to sync gpt-4o-mini to storage:", e);
+      }
     }
 
     // Convert history to the expected format
@@ -271,6 +298,7 @@ export async function* fetchAIResponse(params: {
         imagesBase64,
         history,
         signal,
+        selectedProvider,
       });
       return;
     }

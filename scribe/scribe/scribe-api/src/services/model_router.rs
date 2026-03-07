@@ -77,10 +77,24 @@ impl ModelRouter {
         "gpt-4o-mini".to_string()
     }
 
-    /// Check if a model is allowed for a given plan
+    /// Check if a model is allowed for a given plan.
+    /// Uses prefix matching so variants like "gpt-4o-mini-2024-07-18" match the base "gpt-4o-mini".
     fn is_model_allowed_for_plan(&self, model: &str, plan: &str) -> bool {
         let allowed_models = self.get_allowed_models_for_plan(plan);
-        allowed_models.contains(&model.to_string())
+        // Exact match
+        if allowed_models.contains(&model.to_string()) {
+            return true;
+        }
+        // Prefix match: "gpt-4o-mini-2024-07-18" should match allowed "gpt-4o-mini"
+        // Sort by length descending so "gpt-4o-mini" is checked before "gpt-4o"
+        let mut sorted: Vec<_> = allowed_models.iter().collect();
+        sorted.sort_by(|a, b| b.len().cmp(&a.len()));
+        for allowed in sorted {
+            if model == *allowed || model.starts_with(&format!("{}-", allowed)) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Get list of allowed models for a plan

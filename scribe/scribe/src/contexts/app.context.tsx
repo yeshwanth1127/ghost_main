@@ -16,6 +16,9 @@ import {
   DEFAULT_CUSTOMIZABLE_STATE,
   CursorType,
   updateCursorType,
+  getVoiceActivationState,
+  setVoiceActivationState,
+  VoiceActivationState,
 } from "@/lib/storage";
 import { IContextType, ScreenshotConfig, TYPE_PROVIDER } from "@/types";
 import curl2Json from "@bany/curl-to-json";
@@ -127,6 +130,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     safeLocalStorage.getItem(STORAGE_KEYS.Scribe_API_ENABLED) === "true"
   );
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [voiceActivation, setVoiceActivation] = useState<VoiceActivationState>(
+    getVoiceActivationState
+  );
 
   const ensureInstanceIdForStoredLicense = async () => {
     try {
@@ -159,11 +165,38 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       );
       setHasActiveLicense(response.is_active);
 
+      setIsAdmin(false);
+
       try {
         const storage = await invoke<{ license_key?: string }>(
           "secure_storage_get"
         );
         const licenseKey = storage?.license_key || "";
+
+        if (response.is_active && licenseKey) {
+          try {
+            const adminResponse = await fetch(
+              "http://localhost:8083/api/v1/auth/validate-license",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  license_key: licenseKey,
+                }),
+              }
+            );
+
+            if (adminResponse.ok) {
+              const adminData: { is_admin?: boolean } = await adminResponse.json();
+              setIsAdmin(Boolean(adminData?.is_admin));
+            }
+          } catch {
+            setIsAdmin(false);
+          }
+        }
+
         if (!response.is_active && licenseKey.startsWith("TRIAL-")) {
           setTrialExpired(true);
         } else {
@@ -275,6 +308,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setSelectedSttProvider(JSON.parse(savedSelectedStt));
     }
 
+    // Load voice activation state
+    setVoiceActivation(getVoiceActivationState());
+
     // Load customizable state
     let customizableState = getCustomizableState();
 
@@ -322,12 +358,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
     if (savedScribeApiEnabled !== null) {
       setScribeApiEnabledState(savedScribeApiEnabled === "true");
-    }
-
-    // Check if user is admin (owner license)
-    const licenseKey = safeLocalStorage.getItem("Scribe_license_key");
-    if (licenseKey === "GHOST-OWNER-00000000") {
-      setIsAdmin(true);
     }
   };
 
@@ -515,9 +545,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         e.key === STORAGE_KEYS.SELECTED_STT_PROVIDER ||
         e.key === STORAGE_KEYS.SYSTEM_PROMPT ||
         e.key === STORAGE_KEYS.SCREENSHOT_CONFIG ||
-        e.key === STORAGE_KEYS.CUSTOMIZABLE
+        e.key === STORAGE_KEYS.CUSTOMIZABLE ||
+        e.key === STORAGE_KEYS.VOICE_ACTIVATION
       ) {
-        loadData();
+        if (e.key === STORAGE_KEYS.VOICE_ACTIVATION) {
+          setVoiceActivation(getVoiceActivationState());
+        } else {
+          loadData();
+        }
       }
     };
     window.addEventListener("storage", handleStorageChange);
@@ -650,6 +685,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadData();
   };
 
+  const updateVoiceActivation = (updates: Partial<VoiceActivationState>) => {
+    const newState = { ...voiceActivation, ...updates };
+    setVoiceActivation(newState);
+    setVoiceActivationState(newState);
+  };
+
   // Create the context value (extend IContextType accordingly)
   const value: IContextType = {
     systemPrompt,
@@ -672,6 +713,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     loadData,
     ScribeApiEnabled,
     setScribeApiEnabled,
+    voiceActivation,
+    updateVoiceActivation,
     hasActiveLicense,
     setHasActiveLicense,
     getActiveLicenseStatus,

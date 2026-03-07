@@ -12,6 +12,7 @@ const SETTINGS_SECTIONS = [
   { id: "autostart", label: "App startup" },
   { id: "app-icon", label: "App icon" },
   { id: "always-on-top", label: "Always on top" },
+  { id: "voice-activation", label: "Voice activation" },
   { id: "titles", label: "Element titles" },
   { id: "ai-providers", label: "AI providers" },
   { id: "stt-providers", label: "STT providers" },
