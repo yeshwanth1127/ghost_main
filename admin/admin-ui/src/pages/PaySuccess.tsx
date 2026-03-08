@@ -31,31 +31,12 @@ export default function PaySuccess() {
       });
   }, [searchParams]);
 
-  const containerStyle = {
-    minHeight: "100vh",
-    background: "#0f172a",
-    color: "#e2e8f0",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "2rem",
-  };
-
-  const cardStyle = {
-    padding: "2rem",
-    background: "#1e293b",
-    borderRadius: "8px",
-    border: "1px solid #334155",
-    maxWidth: "480px",
-    width: "100%",
-  };
-
   if (status === "loading") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
-          <h1 style={{ margin: "0 0 1rem" }}>Verifying payment...</h1>
-          <p style={{ color: "#94a3b8" }}>Please wait.</p>
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md rounded-lg border border-ghost-border bg-ghost-surface p-8">
+          <h1 className="mb-4 text-2xl font-semibold text-ghost-text">Verifying payment...</h1>
+          <p className="text-ghost-muted">Please wait.</p>
         </div>
       </div>
     );
@@ -63,20 +44,13 @@ export default function PaySuccess() {
 
   if (status === "error") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
-          <h1 style={{ margin: "0 0 1rem", color: "#f87171" }}>Verification failed</h1>
-          <p style={{ color: "#94a3b8", marginBottom: "1.5rem" }}>{message}</p>
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md rounded-lg border border-ghost-border bg-ghost-surface p-8">
+          <h1 className="mb-4 text-2xl font-semibold text-ghost-error">Verification failed</h1>
+          <p className="mb-6 text-ghost-muted">{message}</p>
           <Link
             to="/subscriptions"
-            style={{
-              display: "inline-block",
-              padding: "0.75rem 1.5rem",
-              background: "#3b82f6",
-              borderRadius: "4px",
-              color: "white",
-              textDecoration: "none",
-            }}
+            className="inline-block rounded-md bg-ghost-accent px-6 py-3 font-medium text-white no-underline transition-colors hover:bg-blue-600"
           >
             Back to subscriptions
           </Link>
@@ -86,67 +60,34 @@ export default function PaySuccess() {
   }
 
   return (
-    <div style={containerStyle}>
-      <div style={cardStyle}>
-        <h1 style={{ margin: "0 0 1rem", color: "#22c55e" }}>Payment successful</h1>
-        <p style={{ color: "#94a3b8", marginBottom: "1rem" }}>{message}</p>
+    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md rounded-lg border border-ghost-border bg-ghost-surface p-8">
+        <h1 className="mb-4 text-2xl font-semibold text-green-500">Payment successful</h1>
+        <p className="mb-4 text-ghost-muted">{message}</p>
         {licenseKey && (
           <>
-            <p style={{ fontSize: "0.875rem", marginBottom: "0.5rem" }}>Your license key:</p>
-            <code
-              style={{
-                display: "block",
-                padding: "1rem",
-                background: "#0f172a",
-                borderRadius: "4px",
-                marginBottom: "1rem",
-                wordBreak: "break-all",
-              }}
-            >
+            <p className="mb-2 text-sm text-ghost-muted">Your license key:</p>
+            <code className="mb-4 block break-all rounded-md bg-ghost-bg p-4 text-sm text-ghost-text">
               {licenseKey}
             </code>
             <button
               onClick={() => navigator.clipboard.writeText(licenseKey)}
-              style={{
-                padding: "0.5rem 1rem",
-                background: "#334155",
-                border: "none",
-                borderRadius: "4px",
-                color: "white",
-                cursor: "pointer",
-                marginRight: "0.5rem",
-              }}
+              className="mb-4 rounded-md bg-ghost-border px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-ghost-muted"
             >
               Copy
             </button>
           </>
         )}
-        <div style={{ marginTop: "1.5rem" }}>
+        <div className="flex flex-wrap gap-3">
           <Link
             to="/"
-            style={{
-              display: "inline-block",
-              padding: "0.75rem 1.5rem",
-              background: "#3b82f6",
-              borderRadius: "4px",
-              color: "white",
-              textDecoration: "none",
-              marginRight: "0.5rem",
-            }}
+            className="inline-block rounded-md bg-ghost-accent px-6 py-3 font-medium text-white no-underline transition-colors hover:bg-blue-600"
           >
             Return to Ghost
           </Link>
           <Link
             to="/account"
-            style={{
-              display: "inline-block",
-              padding: "0.75rem 1.5rem",
-              background: "transparent",
-              borderRadius: "4px",
-              color: "#94a3b8",
-              textDecoration: "none",
-              border: "1px solid #334155",
-            }}
+            className="inline-block rounded-md border border-ghost-border bg-transparent px-6 py-3 font-medium text-ghost-muted no-underline transition-colors hover:text-ghost-text"
           >
             My Account
           </Link>

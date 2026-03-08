@@ -1,9 +1,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import fs from "fs";
 import tailwindcss from "@tailwindcss/vite";
 
 const host = process.env.TAURI_DEV_HOST;
+
+// @tauri-apps/api may be nested in plugins; resolve to first available
+function findTauriApi(): string {
+  const candidates = [
+    path.join(__dirname, "node_modules/@tauri-apps/api"),
+    path.join(__dirname, "node_modules/@tauri-apps/plugin-autostart/node_modules/@tauri-apps/api"),
+    path.join(__dirname, "node_modules/tauri-plugin-keychain/node_modules/@tauri-apps/api"),
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "core.js"))) return c;
+  }
+  return candidates[0];
+}
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
@@ -11,6 +25,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@tauri-apps/api": findTauriApi(),
     },
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

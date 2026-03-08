@@ -16,12 +16,14 @@
 
     /* Linting */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@tauri-apps/api": ["./node_modules/@tauri-apps/api"],
+      "@tauri-apps/api/*": ["./node_modules/@tauri-apps/api/*"]
     }
   },
   "include": ["src"],

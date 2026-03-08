@@ -19,80 +19,41 @@ export default function Account() {
     navigate("/", { replace: true });
   };
 
-  const cardStyle = {
-    padding: "1.5rem",
-    background: "#1e293b",
-    borderRadius: "8px",
-    border: "1px solid #334155",
-    marginBottom: "1rem",
-  };
-
   return (
-    <div style={{ minHeight: "100vh", background: "#0f172a", color: "#e2e8f0", padding: "2rem" }}>
-      <div style={{ maxWidth: "600px", margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-          <h1 style={{ margin: 0 }}>My Account</h1>
+    <div className="px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-2xl">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-bold text-ghost-text">My Account</h1>
           <button
             onClick={handleLogout}
-            style={{
-              padding: "0.5rem 1rem",
-              background: "transparent",
-              border: "1px solid #475569",
-              borderRadius: "4px",
-              color: "#94a3b8",
-              cursor: "pointer",
-            }}
+            className="rounded-md border border-ghost-border bg-transparent px-4 py-2 text-sm font-medium text-ghost-muted transition-colors hover:bg-ghost-surface hover:text-ghost-text"
           >
             Sign out
           </button>
         </div>
-        <div style={cardStyle}>
-          <h2 style={{ fontSize: "1rem", margin: "0 0 1rem" }}>Account details</h2>
-          <p style={{ margin: "0 0 0.5rem", color: "#94a3b8" }}>Email</p>
-          <p style={{ margin: "0 0 1rem" }}>{email || "—"}</p>
-          <p style={{ margin: "0 0 0.5rem", color: "#94a3b8" }}>License key</p>
-          <code
-            style={{
-              display: "block",
-              padding: "0.75rem",
-              background: "#0f172a",
-              borderRadius: "4px",
-              marginBottom: "1rem",
-              wordBreak: "break-all",
-              fontSize: "0.875rem",
-            }}
-          >
+        <div className="mb-6 rounded-lg border border-ghost-border bg-ghost-surface p-6">
+          <h2 className="mb-4 text-base font-semibold text-ghost-text">Account details</h2>
+          <p className="mb-1 text-sm text-ghost-muted">Email</p>
+          <p className="mb-4">{email || "—"}</p>
+          <p className="mb-1 text-sm text-ghost-muted">License key</p>
+          <code className="mb-4 block break-all rounded-md bg-ghost-bg px-3 py-2 text-sm text-ghost-text">
             {licenseKey || "—"}
           </code>
           <button
             onClick={() => licenseKey && navigator.clipboard.writeText(licenseKey)}
-            style={{
-              padding: "0.5rem 1rem",
-              background: "#334155",
-              border: "none",
-              borderRadius: "4px",
-              color: "white",
-              cursor: "pointer",
-            }}
+            className="rounded-md bg-ghost-border px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-ghost-muted"
           >
             Copy license
           </button>
         </div>
-        <div style={cardStyle}>
-          <h2 style={{ fontSize: "1rem", margin: "0 0 1rem" }}>Upgrade</h2>
-          <p style={{ color: "#94a3b8", marginBottom: "1rem" }}>
+        <div className="rounded-lg border border-ghost-border bg-ghost-surface p-6">
+          <h2 className="mb-4 text-base font-semibold text-ghost-text">Upgrade</h2>
+          <p className="mb-6 text-ghost-muted">
             Get more tokens and access to premium models with a subscription.
           </p>
           <Link
             to="/subscriptions"
-            style={{
-              display: "inline-block",
-              padding: "0.75rem 1.5rem",
-              background: "#3b82f6",
-              borderRadius: "4px",
-              color: "white",
-              textDecoration: "none",
-            }}
+            className="inline-block rounded-md bg-ghost-accent px-6 py-3 font-medium text-white no-underline transition-colors hover:bg-blue-600"
           >
             View plans
           </Link>

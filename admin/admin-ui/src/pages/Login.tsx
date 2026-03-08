@@ -2,24 +2,6 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { login, customerLogin } from "../api";
 
-const formStyle = {
-  padding: "2rem",
-  background: "#1e293b",
-  borderRadius: "8px",
-  width: "320px",
-  boxShadow: "0 4px 6px rgba(0,0,0,0.3)",
-};
-
-const inputStyle = {
-  width: "100%",
-  padding: "0.5rem 0.75rem",
-  background: "#0f172a",
-  border: "1px solid #334155",
-  borderRadius: "4px",
-  color: "#e2e8f0",
-  fontSize: "1rem",
-};
-
 type Mode = "admin" | "customer";
 
 export default function Login() {
@@ -60,99 +42,88 @@ export default function Login() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", alignItems: "center", justifyContent: "center" }}>
-      <form onSubmit={handleSubmit} style={formStyle}>
-        <h1 style={{ margin: "0 0 1.5rem", fontSize: "1.5rem" }}>Ghost</h1>
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm rounded-lg border border-ghost-border bg-ghost-surface p-8 shadow-lg"
+      >
+        <h1 className="mb-6 text-2xl font-semibold text-ghost-text">Ghost</h1>
+        <div className="mb-4 flex gap-2">
           <button
             type="button"
             onClick={() => setMode("customer")}
-            style={{
-              flex: 1,
-              padding: "0.5rem",
-              background: mode === "customer" ? "#334155" : "transparent",
-              border: "1px solid #334155",
-              borderRadius: "4px",
-              color: "#e2e8f0",
-              cursor: "pointer",
-            }}
+            className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+              mode === "customer"
+                ? "border-ghost-border bg-ghost-border/50 text-ghost-text"
+                : "border-ghost-border bg-transparent text-ghost-muted hover:text-ghost-text"
+            }`}
           >
             Customer
           </button>
           <button
             type="button"
             onClick={() => setMode("admin")}
-            style={{
-              flex: 1,
-              padding: "0.5rem",
-              background: mode === "admin" ? "#334155" : "transparent",
-              border: "1px solid #334155",
-              borderRadius: "4px",
-              color: "#e2e8f0",
-              cursor: "pointer",
-            }}
+            className={`flex-1 rounded-md border px-4 py-2 text-sm font-medium transition-colors ${
+              mode === "admin"
+                ? "border-ghost-border bg-ghost-border/50 text-ghost-text"
+                : "border-ghost-border bg-transparent text-ghost-muted hover:text-ghost-text"
+            }`}
           >
             Admin
           </button>
         </div>
         {error && (
-          <div style={{ color: "#f87171", marginBottom: "1rem", fontSize: "0.875rem" }}>{error}</div>
+          <div className="mb-4 text-sm text-ghost-error">{error}</div>
         )}
         {mode === "admin" ? (
-          <div style={{ marginBottom: "1rem" }}>
-            <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem" }}>Username</label>
+          <div className="mb-4">
+            <label className="mb-2 block text-sm text-ghost-muted">Username</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
               autoComplete="username"
-              style={inputStyle}
+              className="w-full rounded-md border border-ghost-border bg-ghost-bg px-3 py-2 text-ghost-text placeholder-ghost-muted focus:border-ghost-accent focus:outline-none focus:ring-1 focus:ring-ghost-accent"
             />
           </div>
         ) : (
-          <div style={{ marginBottom: "1rem" }}>
-            <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem" }}>Email</label>
+          <div className="mb-4">
+            <label className="mb-2 block text-sm text-ghost-muted">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              style={inputStyle}
+              className="w-full rounded-md border border-ghost-border bg-ghost-bg px-3 py-2 text-ghost-text placeholder-ghost-muted focus:border-ghost-accent focus:outline-none focus:ring-1 focus:ring-ghost-accent"
             />
           </div>
         )}
-        <div style={{ marginBottom: "1.5rem" }}>
-          <label style={{ display: "block", marginBottom: "0.5rem", fontSize: "0.875rem" }}>Password</label>
+        <div className="mb-6">
+          <label className="mb-2 block text-sm text-ghost-muted">Password</label>
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            autoComplete={mode === "admin" ? "current-password" : "current-password"}
-            style={inputStyle}
+            autoComplete="current-password"
+            className="w-full rounded-md border border-ghost-border bg-ghost-bg px-3 py-2 text-ghost-text placeholder-ghost-muted focus:border-ghost-accent focus:outline-none focus:ring-1 focus:ring-ghost-accent"
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          style={{
-            width: "100%",
-            padding: "0.75rem",
-            background: "#3b82f6",
-            border: "none",
-            borderRadius: "4px",
-            color: "white",
-            fontSize: "1rem",
-            cursor: loading ? "not-allowed" : "pointer",
-          }}
+          className="w-full rounded-md bg-ghost-accent px-4 py-3 font-medium text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {loading ? "Signing in..." : "Sign in"}
         </button>
         {mode === "customer" && (
-          <p style={{ marginTop: "1rem", fontSize: "0.875rem", color: "#94a3b8" }}>
-            Don&apos;t have an account? <Link to="/signup" style={{ color: "#3b82f6" }}>Sign up</Link>
+          <p className="mt-4 text-center text-sm text-ghost-muted">
+            Don&apos;t have an account?{" "}
+            <Link to="/signup" className="text-ghost-accent hover:underline">
+              Sign up
+            </Link>
           </p>
         )}
       </form>

@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ghost-postgres
+    environment:
+      POSTGRES_USER: ghost
+      POSTGRES_PASSWORD: ghost
+      POSTGRES_DB: ghost
+    ports:
+      - "5432:5432"
+    volumes:
+      - ghost_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ghost -d ghost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: ghost-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  scribe-api:
+    build:
+      context: .
+      dockerfile: scribe/scribe/scribe-api/Dockerfile
+    container_name: ghost-scribe-api
+    ports:
+      - "8083:8083"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8083"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://ghost:ghost@postgres:5432/ghost}
+      REDIS_URL: redis://redis:6379
+      PAYMENT_BASE_URL: https://ghost.exora.solutions
+      API_ACCESS_KEY: ${API_ACCESS_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      RUST_LOG: ${RUST_LOG:-ghost_api=info,info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ghost_postgres_data:

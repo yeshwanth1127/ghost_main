@@ -12,16 +12,9 @@ import {
 
 function Card({ title, value }: { title: string; value: string | number }) {
   return (
-    <div
-      style={{
-        padding: "1rem 1.5rem",
-        background: "#1e293b",
-        borderRadius: "8px",
-        border: "1px solid #334155",
-      }}
-    >
-      <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>{title}</div>
-      <div style={{ fontSize: "1.5rem", fontWeight: 600 }}>{value}</div>
+    <div className="rounded-lg border border-ghost-border bg-ghost-surface px-6 py-4">
+      <div className="mb-1 text-xs text-ghost-muted">{title}</div>
+      <div className="text-2xl font-semibold text-ghost-text">{value}</div>
     </div>
   );
 }
@@ -53,11 +46,14 @@ function Table<T extends object>({
   rowKey: (row: T) => string;
 }) {
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    <table className="w-full border-collapse">
       <thead>
-        <tr style={{ borderBottom: "1px solid #334155" }}>
+        <tr className="border-b border-ghost-border">
           {columns.map((c) => (
-            <th key={String(c.key)} style={{ textAlign: "left", padding: "0.75rem", fontSize: "0.75rem", color: "#94a3b8" }}>
+            <th
+              key={String(c.key)}
+              className="px-4 py-3 text-left text-xs font-medium text-ghost-muted"
+            >
               {c.label}
             </th>
           ))}
@@ -65,12 +61,12 @@ function Table<T extends object>({
       </thead>
       <tbody>
         {data.map((row) => (
-          <tr key={rowKey(row)} style={{ borderBottom: "1px solid #1e293b" }}>
+          <tr key={rowKey(row)} className="border-b border-ghost-surface">
             {columns.map((c) => {
               const raw = (row as Record<string, unknown>)[c.key as string];
               const display = c.format ? c.format(raw) : String(raw ?? "");
               return (
-                <td key={String(c.key)} style={{ padding: "0.75rem", fontSize: "0.875rem" }}>
+                <td key={String(c.key)} className="px-4 py-3 text-sm text-ghost-text">
                   {display}
                 </td>
               );
@@ -119,15 +115,18 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div style={{ padding: "2rem", textAlign: "center" }}>Loading...</div>
+      <div className="px-4 py-12 text-center text-ghost-muted">Loading...</div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ padding: "2rem", color: "#f87171" }}>
-        {error}
-        <button onClick={() => window.location.reload()} style={{ marginLeft: "1rem" }}>
+      <div className="px-4 py-12">
+        <span className="text-ghost-error">{error}</span>
+        <button
+          onClick={() => window.location.reload()}
+          className="ml-4 rounded-md bg-ghost-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+        >
           Retry
         </button>
       </div>
@@ -135,80 +134,75 @@ export default function Dashboard() {
   }
 
   return (
-    <div style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2rem" }}>
-        <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Ghost Admin Dashboard</h1>
-        <button
-          onClick={handleLogout}
-          style={{
-            padding: "0.5rem 1rem",
-            background: "transparent",
-            border: "1px solid #475569",
-            borderRadius: "4px",
-            color: "#94a3b8",
-            cursor: "pointer",
-          }}
-        >
-          Logout
-        </button>
+    <div className="px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-bold text-ghost-text">Ghost Admin Dashboard</h1>
+          <button
+            onClick={handleLogout}
+            className="rounded-md border border-ghost-border bg-transparent px-4 py-2 text-sm font-medium text-ghost-muted transition-colors hover:bg-ghost-surface hover:text-ghost-text"
+          >
+            Logout
+          </button>
+        </div>
+
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card title="Total Users" value={stats?.total_users ?? 0} />
+          <Card title="Total Tokens" value={stats?.total_tokens?.toLocaleString() ?? 0} />
+          <Card title="Total Cost (USD)" value={stats?.total_cost_usd ?? "0"} />
+          <Card title="Total Revenue (USD)" value={stats?.total_revenue ?? "0"} />
+        </div>
+
+        <section className="mb-8">
+          <h2 className="mb-4 text-base font-semibold text-ghost-text">Model Breakdown</h2>
+          <div className="overflow-hidden rounded-lg border border-ghost-border bg-ghost-surface">
+            <Table
+              columns={[
+                { key: "model", label: "Model" },
+                { key: "provider", label: "Provider" },
+                { key: "tokens", label: "Tokens" },
+                { key: "cost_usd", label: "Cost USD" },
+                { key: "requests", label: "Requests" },
+              ]}
+              data={modelBreakdown}
+              rowKey={(r) => `${r.model}-${r.provider}`}
+            />
+          </div>
+        </section>
+
+        <section className="mb-8">
+          <h2 className="mb-4 text-base font-semibold text-ghost-text">Top Users</h2>
+          <div className="overflow-hidden rounded-lg border border-ghost-border bg-ghost-surface">
+            <Table
+              columns={[
+                { key: "email", label: "Email" },
+                { key: "tokens", label: "Tokens" },
+                { key: "cost_usd", label: "Cost USD" },
+              ]}
+              data={topUsers}
+              rowKey={(r) => `${r.email ?? "null"}-${r.tokens}`}
+            />
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-base font-semibold text-ghost-text">Recent Messages</h2>
+          <div className="max-h-[400px] overflow-y-auto overflow-hidden rounded-lg border border-ghost-border bg-ghost-surface">
+            <Table
+              columns={[
+                { key: "email", label: "User" },
+                { key: "model", label: "Model" },
+                { key: "provider", label: "Provider" },
+                { key: "total_tokens", label: "Tokens" },
+                { key: "cost_usd", label: "Cost" },
+                { key: "created_at", label: "Date & Time", format: formatDateTime },
+              ]}
+              data={recentMessages}
+              rowKey={(r) => `${r.user_id}-${r.created_at}`}
+            />
+          </div>
+        </section>
       </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "2rem" }}>
-        <Card title="Total Users" value={stats?.total_users ?? 0} />
-        <Card title="Total Tokens" value={stats?.total_tokens?.toLocaleString() ?? 0} />
-        <Card title="Total Cost (USD)" value={stats?.total_cost_usd ?? "0"} />
-        <Card title="Total Revenue (USD)" value={stats?.total_revenue ?? "0"} />
-      </div>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={{ fontSize: "1rem", marginBottom: "1rem" }}>Model Breakdown</h2>
-        <div style={{ background: "#1e293b", borderRadius: "8px", overflow: "hidden", border: "1px solid #334155" }}>
-          <Table
-            columns={[
-              { key: "model", label: "Model" },
-              { key: "provider", label: "Provider" },
-              { key: "tokens", label: "Tokens" },
-              { key: "cost_usd", label: "Cost USD" },
-              { key: "requests", label: "Requests" },
-            ]}
-            data={modelBreakdown}
-            rowKey={(r) => `${r.model}-${r.provider}`}
-          />
-        </div>
-      </section>
-
-      <section style={{ marginBottom: "2rem" }}>
-        <h2 style={{ fontSize: "1rem", marginBottom: "1rem" }}>Top Users</h2>
-        <div style={{ background: "#1e293b", borderRadius: "8px", overflow: "hidden", border: "1px solid #334155" }}>
-          <Table
-            columns={[
-              { key: "email", label: "Email" },
-              { key: "tokens", label: "Tokens" },
-              { key: "cost_usd", label: "Cost USD" },
-            ]}
-            data={topUsers}
-            rowKey={(r) => `${r.email ?? "null"}-${r.tokens}`}
-          />
-        </div>
-      </section>
-
-      <section>
-        <h2 style={{ fontSize: "1rem", marginBottom: "1rem" }}>Recent Messages</h2>
-        <div style={{ background: "#1e293b", borderRadius: "8px", overflow: "hidden", border: "1px solid #334155", maxHeight: "400px", overflowY: "auto" }}>
-          <Table
-            columns={[
-              { key: "email", label: "User" },
-              { key: "model", label: "Model" },
-              { key: "provider", label: "Provider" },
-              { key: "total_tokens", label: "Tokens" },
-              { key: "cost_usd", label: "Cost" },
-              { key: "created_at", label: "Date & Time", format: formatDateTime },
-            ]}
-            data={recentMessages}
-            rowKey={(r) => `${r.user_id}-${r.created_at}`}
-          />
-        </div>
-      </section>
     </div>
   );
 }

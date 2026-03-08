@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# Dependencies
+node_modules
+**/target
+
+# Build outputs
+**/dist
+**/*.log
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Env (secrets - use docker compose env)
+.env
+.env.*
+!.env.example
+
+# Docs and misc
+docs
+*.md
+!docker/README.md
+
+# Scribe desktop (not needed for scribe-api build)
+scribe/scribe/src
+scribe/scribe/public
+scribe/scribe/dist
+admin/admin-ui

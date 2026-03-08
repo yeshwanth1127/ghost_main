@@ -1,0 +1,3 @@
+# Place built Scribe installers here for the download page.
+# See docs/DEPLOY.md for build and copy instructions.
+# Files: Ghost_*_setup.exe, Ghost_*.msi, Ghost_*.dmg, ghost_*.deb, Ghost_*.AppImage
