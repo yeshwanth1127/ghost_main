@@ -39,6 +39,7 @@ pub struct VerifyPaymentRequest {
 pub struct VerifyPaymentResponse {
     pub success: bool,
     pub license_key: Option<String>,
+    pub plan: Option<String>,
     pub message: String,
 }
 
@@ -405,6 +406,7 @@ pub async fn verify_payment(
     Ok(Json(VerifyPaymentResponse {
         success: true,
         license_key: Some(license_key),
+        plan: Some(plan.to_string()),
         message: "Payment verified. Your plan has been upgraded.".to_string(),
     }))
 }

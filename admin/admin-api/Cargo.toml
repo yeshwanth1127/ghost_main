@@ -23,3 +23,5 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
+mail-send = { version = "0.5", default-features = false, features = ["builder", "tls12"] }
+rustls = { version = "0.23", features = ["ring"] }

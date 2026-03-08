@@ -20,6 +20,7 @@ export default function SignUp() {
       localStorage.setItem("customer_email", loginData.email);
       localStorage.setItem("customer_license", loginData.license_key);
       localStorage.setItem("customer_user_id", loginData.user_id);
+      if (loginData.plan) localStorage.setItem("customer_plan", loginData.plan);
       setSuccess({ license_key: data.license_key });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -30,31 +31,31 @@ export default function SignUp() {
 
   if (success) {
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
-        <div className="w-full max-w-sm rounded-lg border border-ghost-border bg-ghost-surface p-8 shadow-lg">
-          <h1 className="mb-4 text-2xl font-semibold text-ghost-text">Account created</h1>
-          <p className="mb-4 text-sm text-ghost-muted">
+      <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 sm:py-16 md:px-8 lg:px-12 xl:px-32">
+        <div className="w-full max-w-sm rounded-lg border border-white/20 bg-white/5 p-6 sm:p-8 mx-4" style={{ fontFamily: "Space Grotesk, sans-serif" }}>
+          <h1 className="mb-4 text-xl sm:text-2xl font-bold" style={{ fontFamily: "Bebas Neue, sans-serif", color: "#ff9a8b" }}>Account created</h1>
+          <p className="mb-4 text-sm text-white">
             Your 14-day free trial has started. Use this license key in the Ghost app:
           </p>
-          <code className="mb-4 block break-all rounded-md bg-ghost-bg p-4 text-sm text-ghost-text">
+          <code className="mb-4 block break-all rounded-lg bg-black p-4 text-sm text-white">
             {success.license_key}
           </code>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => navigator.clipboard.writeText(success.license_key)}
-              className="rounded-md bg-ghost-border px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-ghost-muted"
+              className="rounded-lg border border-white px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/10"
             >
               Copy
             </button>
             <Link
               to="/subscriptions"
-              className="rounded-md bg-ghost-accent px-4 py-2 text-sm font-medium text-white no-underline transition-colors hover:bg-blue-600"
+              className="rounded-lg border border-white bg-black px-4 py-2 text-sm font-medium text-white no-underline transition-colors hover:bg-white/10"
             >
               Upgrade plan
             </Link>
             <Link
               to="/login"
-              className="rounded-md border border-ghost-border bg-transparent px-4 py-2 text-sm font-medium text-ghost-muted no-underline transition-colors hover:text-ghost-text"
+              className="rounded-lg border border-white/30 bg-transparent px-4 py-2 text-sm font-medium text-white/80 no-underline transition-colors hover:text-white"
             >
               Sign in
             </Link>
@@ -64,29 +65,31 @@ export default function SignUp() {
     );
   }
 
+
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-12">
+    <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 sm:py-16 md:px-8 lg:px-12 xl:px-32">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-lg border border-ghost-border bg-ghost-surface p-8 shadow-lg"
+        className="w-full max-w-sm rounded-lg border border-white/20 bg-white/5 p-6 sm:p-8 mx-4"
+        style={{ fontFamily: "Space Grotesk, sans-serif" }}
       >
-        <h1 className="mb-6 text-2xl font-semibold text-ghost-text">Sign up</h1>
+        <h1 className="mb-6 text-xl sm:text-2xl font-bold" style={{ fontFamily: "Bebas Neue, sans-serif", color: "#ff9a8b" }}>Sign up</h1>
         {error && (
-          <div className="mb-4 text-sm text-ghost-error">{error}</div>
+          <div className="mb-4 text-sm text-red-400">{error}</div>
         )}
         <div className="mb-4">
-          <label className="mb-2 block text-sm text-ghost-muted">Email</label>
+          <label className="mb-2 block text-sm" style={{ color: "#c96a5b" }}>Email</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="w-full rounded-md border border-ghost-border bg-ghost-bg px-3 py-2 text-ghost-text placeholder-ghost-muted focus:border-ghost-accent focus:outline-none focus:ring-1 focus:ring-ghost-accent"
+            className="w-full rounded-lg border border-white/30 bg-black px-3 py-2 text-white placeholder-white/50 focus:border-[#ff9a8b] focus:outline-none focus:ring-1 focus:ring-[#ff9a8b]"
           />
         </div>
         <div className="mb-6">
-          <label className="mb-2 block text-sm text-ghost-muted">Password</label>
+          <label className="mb-2 block text-sm" style={{ color: "#c96a5b" }}>Password</label>
           <input
             type="password"
             value={password}
@@ -94,19 +97,19 @@ export default function SignUp() {
             required
             minLength={6}
             autoComplete="new-password"
-            className="w-full rounded-md border border-ghost-border bg-ghost-bg px-3 py-2 text-ghost-text placeholder-ghost-muted focus:border-ghost-accent focus:outline-none focus:ring-1 focus:ring-ghost-accent"
+            className="w-full rounded-lg border border-white/30 bg-black px-3 py-2 text-white placeholder-white/50 focus:border-[#ff9a8b] focus:outline-none focus:ring-1 focus:ring-[#ff9a8b]"
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-ghost-accent px-4 py-3 font-medium text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-lg border border-white bg-black px-4 py-3 font-medium text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {loading ? "Creating account..." : "Sign up"}
         </button>
-        <p className="mt-4 text-center text-sm text-ghost-muted">
+        <p className="mt-4 text-center text-sm text-white/80">
           Already have an account?{" "}
-          <Link to="/login" className="text-ghost-accent hover:underline">
+          <Link to="/login" className="text-[#ff9a8b] hover:underline">
             Sign in
           </Link>
         </p>

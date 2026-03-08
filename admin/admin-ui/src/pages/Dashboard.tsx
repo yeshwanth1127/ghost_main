@@ -12,9 +12,9 @@ import {
 
 function Card({ title, value }: { title: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-ghost-border bg-ghost-surface px-6 py-4">
-      <div className="mb-1 text-xs text-ghost-muted">{title}</div>
-      <div className="text-2xl font-semibold text-ghost-text">{value}</div>
+    <div className="rounded-lg border border-white/20 bg-white/5 px-4 py-3 sm:px-6 sm:py-4">
+      <div className="mb-1 text-xs" style={{ color: "#c96a5b" }}>{title}</div>
+      <div className="text-lg sm:text-2xl font-semibold text-white truncate">{value}</div>
     </div>
   );
 }
@@ -48,11 +48,12 @@ function Table<T extends object>({
   return (
     <table className="w-full border-collapse">
       <thead>
-        <tr className="border-b border-ghost-border">
+        <tr className="border-b border-white/20">
           {columns.map((c) => (
             <th
               key={String(c.key)}
-              className="px-4 py-3 text-left text-xs font-medium text-ghost-muted"
+              className="px-3 py-2 sm:px-4 sm:py-3 text-left text-xs font-medium whitespace-nowrap"
+              style={{ color: "#c96a5b" }}
             >
               {c.label}
             </th>
@@ -61,12 +62,12 @@ function Table<T extends object>({
       </thead>
       <tbody>
         {data.map((row) => (
-          <tr key={rowKey(row)} className="border-b border-ghost-surface">
+          <tr key={rowKey(row)} className="border-b border-white/10">
             {columns.map((c) => {
               const raw = (row as Record<string, unknown>)[c.key as string];
               const display = c.format ? c.format(raw) : String(raw ?? "");
               return (
-                <td key={String(c.key)} className="px-4 py-3 text-sm text-ghost-text">
+                <td key={String(c.key)} className="px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-white whitespace-nowrap">
                   {display}
                 </td>
               );
@@ -115,17 +116,19 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="px-4 py-12 text-center text-ghost-muted">Loading...</div>
+      <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 lg:px-12 xl:px-32 text-white/80" style={{ fontFamily: "Space Grotesk, sans-serif" }}>
+        Loading...
+      </div>
     );
   }
 
   if (error) {
     return (
-      <div className="px-4 py-12">
-        <span className="text-ghost-error">{error}</span>
+      <div className="px-4 py-12 sm:px-6 sm:py-16 md:px-8 lg:px-12 xl:px-32" style={{ fontFamily: "Space Grotesk, sans-serif" }}>
+        <span className="text-red-400">{error}</span>
         <button
           onClick={() => window.location.reload()}
-          className="ml-4 rounded-md bg-ghost-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+          className="ml-4 rounded-lg border border-white bg-black px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
         >
           Retry
         </button>
@@ -134,28 +137,30 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
+    <div className="px-12 py-20 lg:px-32 lg:py-24" style={{ fontFamily: "Space Grotesk, sans-serif" }}>
+      <div className="max-w-6xl">
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold text-ghost-text">Ghost Admin Dashboard</h1>
+          <h1 className="text-2xl font-bold" style={{ fontFamily: "Bebas Neue, sans-serif", color: "#ff9a8b" }}>
+            Ghost Admin Dashboard
+          </h1>
           <button
             onClick={handleLogout}
-            className="rounded-md border border-ghost-border bg-transparent px-4 py-2 text-sm font-medium text-ghost-muted transition-colors hover:bg-ghost-surface hover:text-ghost-text"
+            className="rounded-lg border border-white/30 bg-transparent px-4 py-2 text-sm font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
           >
             Logout
           </button>
         </div>
 
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-6 sm:mb-8 grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card title="Total Users" value={stats?.total_users ?? 0} />
           <Card title="Total Tokens" value={stats?.total_tokens?.toLocaleString() ?? 0} />
           <Card title="Total Cost (USD)" value={stats?.total_cost_usd ?? "0"} />
           <Card title="Total Revenue (USD)" value={stats?.total_revenue ?? "0"} />
         </div>
 
-        <section className="mb-8">
-          <h2 className="mb-4 text-base font-semibold text-ghost-text">Model Breakdown</h2>
-          <div className="overflow-hidden rounded-lg border border-ghost-border bg-ghost-surface">
+        <section className="mb-6 sm:mb-8">
+          <h2 className="mb-3 sm:mb-4 text-sm sm:text-base font-semibold" style={{ color: "#c96a5b" }}>Model Breakdown</h2>
+          <div className="overflow-x-auto rounded-lg border border-white/20 bg-white/5">
             <Table
               columns={[
                 { key: "model", label: "Model" },
@@ -170,9 +175,9 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <section className="mb-8">
-          <h2 className="mb-4 text-base font-semibold text-ghost-text">Top Users</h2>
-          <div className="overflow-hidden rounded-lg border border-ghost-border bg-ghost-surface">
+        <section className="mb-6 sm:mb-8">
+          <h2 className="mb-3 sm:mb-4 text-sm sm:text-base font-semibold" style={{ color: "#c96a5b" }}>Top Users</h2>
+          <div className="overflow-x-auto rounded-lg border border-white/20 bg-white/5">
             <Table
               columns={[
                 { key: "email", label: "Email" },
@@ -186,8 +191,8 @@ export default function Dashboard() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-base font-semibold text-ghost-text">Recent Messages</h2>
-          <div className="max-h-[400px] overflow-y-auto overflow-hidden rounded-lg border border-ghost-border bg-ghost-surface">
+          <h2 className="mb-4 text-base font-semibold" style={{ color: "#c96a5b" }}>Recent Messages</h2>
+          <div className="max-h-[400px] overflow-y-auto overflow-hidden rounded-lg border border-white/20 bg-white/5">
             <Table
               columns={[
                 { key: "email", label: "User" },

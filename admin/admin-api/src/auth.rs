@@ -4,10 +4,29 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use jsonwebtoken::{decode, DecodingKey, Validation};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 
 use crate::state::AppState;
+
+/// Create a customer JWT for the given user (used by OTP login and trial signup)
+pub fn create_customer_token(
+    user_id: &str,
+    email: &str,
+    secret: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    let exp = chrono::Utc::now() + chrono::Duration::days(7);
+    let claims = CustomerClaims {
+        sub: user_id.to_string(),
+        email: email.to_string(),
+        exp: exp.timestamp(),
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {

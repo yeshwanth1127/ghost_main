@@ -1,12 +1,27 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-ghost-bg: #0f172a;
+  --color-ghost-surface: #1e293b;
+  --color-ghost-border: #334155;
+  --color-ghost-muted: #94a3b8;
+  --color-ghost-text: #e2e8f0;
+  --color-ghost-accent: #3b82f6;
+  --color-ghost-error: #f87171;
+  --color-ghost-brand: #ff9a8b;
+  --color-ghost-icon: #8a2be2;
+  --font-sans: "Space Grotesk", system-ui, sans-serif;
+  --font-ghost-brand: "Bebas Neue", sans-serif;
+}
 
 @layer base {
   * {
     @apply box-border;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
-    @apply m-0 min-h-screen bg-ghost-bg text-ghost-text font-sans antialiased;
+    @apply m-0 min-h-screen bg-black text-white font-sans antialiased overflow-x-hidden;
   }
 }

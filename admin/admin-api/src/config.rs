@@ -14,6 +14,12 @@ pub struct Config {
     pub razorpay_plan_starter: String,
     pub razorpay_plan_pro: String,
     pub razorpay_plan_power: String,
+    pub resend_api_key: String,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_username: String,
+    pub smtp_password: String,
+    pub smtp_from_email: String,
 }
 
 impl Config {
@@ -35,6 +41,12 @@ impl Config {
             razorpay_plan_starter: env::var("RAZORPAY_PLAN_STARTER").unwrap_or_else(|_| String::new()),
             razorpay_plan_pro: env::var("RAZORPAY_PLAN_PRO").unwrap_or_else(|_| String::new()),
             razorpay_plan_power: env::var("RAZORPAY_PLAN_POWER").unwrap_or_else(|_| String::new()),
+            resend_api_key: env::var("RESEND_API_KEY").unwrap_or_default(),
+            smtp_host: env::var("SMTP_HOST").unwrap_or_else(|_| "smtp.hostinger.com".to_string()),
+            smtp_port: env::var("SMTP_PORT").unwrap_or_else(|_| "587".to_string()).parse().unwrap_or(587),
+            smtp_username: env::var("SMTP_USERNAME").unwrap_or_default(),
+            smtp_password: env::var("SMTP_PASSWORD").unwrap_or_default(),
+            smtp_from_email: env::var("SMTP_FROM_EMAIL").unwrap_or_else(|_| "support@exora.solutions".to_string()),
         })
     }
 }

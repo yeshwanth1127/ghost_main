@@ -29,26 +29,32 @@ export const FloatingLogo = ({ onExpand }: FloatingLogoProps) => {
 
   return (
     <div
-      className="w-full h-full flex items-center justify-center cursor-pointer select-none bg-transparent"
+      className="w-full h-full flex items-center justify-center select-none bg-transparent"
       data-tauri-drag-region
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onExpand();
-        }
-      }}
-      aria-label="Click to expand Ghost"
     >
-      <img
-        src="/ghost_logo.png"
-        alt="Ghost"
-        className="w-14 h-14 object-contain pointer-events-none"
-        draggable={false}
-      />
+      <div
+        className="flex items-center justify-center cursor-pointer w-14 h-14 rounded-full hover:bg-white/10 transition-colors"
+        style={{ WebkitAppRegion: "no-drag", appRegion: "no-drag" } as React.CSSProperties}
+        onClick={onExpand}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onExpand();
+          }
+        }}
+        aria-label="Click to expand Ghost"
+      >
+        <img
+          src="/ghost_logo.png"
+          alt="Ghost"
+          className="w-12 h-12 object-contain pointer-events-none"
+          draggable={false}
+        />
+      </div>
     </div>
   );
 };

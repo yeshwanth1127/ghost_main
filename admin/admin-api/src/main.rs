@@ -10,14 +10,24 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber;
 
-use routes::{admin, auth as auth_routes, payments as payment_routes};
+use routes::{admin, auth as auth_routes, payments as payment_routes, trial as trial_routes};
 use state::AppState;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load .env: try admin-api dir first, then scribe-api (same DB)
+    // Required for rustls (used by mail-send SMTP)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
+    // Load .env: admin-api dir first (works regardless of cwd), then cwd, then scribe-api
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let _ = dotenvy::from_path(manifest_dir.join(".env"));
     let _ = dotenvy::dotenv();
-    let _ = dotenvy::from_path_override("../../scribe/scribe/scribe-api/.env");
+    let scribe_env = manifest_dir.join("../../scribe/scribe/scribe-api/.env");
+    if scribe_env.exists() {
+        let _ = dotenvy::from_path_override(&scribe_env);
+    }
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -55,6 +65,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/auth/login", post(auth_routes::login))
         .route("/api/auth/customer-login", post(auth_routes::customer_login))
         .route("/api/auth/register", post(auth_routes::register))
+        .route("/api/trial/send-otp", post(trial_routes::send_otp))
+        .route("/api/trial/send-login-otp", post(trial_routes::send_login_otp))
+        .route("/api/trial/verify-otp", post(trial_routes::verify_otp))
         .route("/api/payments/create-subscription", post(payment_routes::create_subscription))
         .route("/api/payments/verify", post(payment_routes::verify_payment))
         .route("/api/payments/webhook", post(payment_routes::webhook))
@@ -64,6 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     tracing::info!("Admin API listening on {}", addr);
+    if !config.smtp_username.is_empty() {
+        tracing::info!("Email (SMTP) configured: {} @ {}", config.smtp_username, config.smtp_host);
+    } else if !config.resend_api_key.is_empty() {
+        tracing::info!("Email (Resend) configured");
+    } else {
+        tracing::info!("Email not configured - OTP will be logged to console only");
+    }
     axum::serve(tokio::net::TcpListener::bind(addr).await?, app).await?;
     Ok(())
 }

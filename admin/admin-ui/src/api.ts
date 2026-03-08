@@ -1,5 +1,20 @@
 const API_BASE = "/api";
 
+async function parseJsonResponse<T>(res: Response, fallbackError: string): Promise<T> {
+  const text = await res.text();
+  let data: T;
+  try {
+    data = (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    throw new Error(text || fallbackError);
+  }
+  if (!res.ok) {
+    const err = data as { message?: string; error?: string };
+    throw new Error(err?.message || err?.error || text || fallbackError);
+  }
+  return data;
+}
+
 function getAdminToken(): string | null {
   return localStorage.getItem("admin_token");
 }
@@ -18,11 +33,7 @@ export async function login(username: string, password: string): Promise<{ token
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || "Login failed");
-  }
-  return res.json();
+  return parseJsonResponse<{ token: string }>(res, "Login failed");
 }
 
 export interface CustomerLoginResponse {
@@ -39,11 +50,7 @@ export async function customerLogin(email: string, password: string): Promise<Cu
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || "Login failed");
-  }
-  return res.json();
+  return parseJsonResponse<CustomerLoginResponse>(res, "Login failed");
 }
 
 export interface RegisterResponse {
@@ -94,7 +101,49 @@ export async function createSubscription(
 export interface VerifyPaymentResponse {
   success: boolean;
   license_key?: string;
+  plan?: string;
   message: string;
+}
+
+export async function sendTrialOtp(email: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/trial/send-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseJsonResponse<{ success: boolean; message: string }>(res, "Failed to send verification code");
+}
+
+export interface VerifyOtpResponse {
+  success: boolean;
+  message: string;
+  token?: string;
+  user_id?: string;
+  email?: string;
+  license_key?: string;
+  plan?: string;
+  trial_ends_at?: string;
+}
+
+export async function sendLoginOtp(email: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/trial/send-login-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseJsonResponse<{ success: boolean; message: string }>(res, "Failed to send verification code");
+}
+
+export async function verifyTrialOtp(
+  email: string,
+  otp: string
+): Promise<VerifyOtpResponse> {
+  const res = await fetch(`${API_BASE}/trial/verify-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, otp }),
+  });
+  return parseJsonResponse<VerifyOtpResponse>(res, "Verification failed");
 }
 
 export async function verifyPayment(

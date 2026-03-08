@@ -26,6 +26,7 @@ export default defineConfig(async () => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
       "@tauri-apps/api": findTauriApi(),
+      "lucide-react": path.resolve(__dirname, "node_modules/lucide-react/dist/cjs/lucide-react.js"),
     },
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
