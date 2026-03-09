@@ -127,3 +127,11 @@
 2026-03-08T16:13:29: 2026-03-08T16:13:29.176422Z  INFO admin_api::routes::trial: Free trial created: roopa.sunkidz@gmail.com with license GHOST-KDPWWEUC-B3088EV6
 2026-03-09T09:11:46: 2026-03-09T09:11:46.240450Z  INFO admin_api: Admin API listening on 0.0.0.0:6660
 2026-03-09T09:11:46: 2026-03-09T09:11:46.240741Z  INFO admin_api: Email (SMTP) configured: support@exora.solutions @ smtp.hostinger.com
+2026-03-09T09:58:55: 2026-03-09T09:58:55.650107Z  INFO admin_api: Admin API listening on 0.0.0.0:6660
+2026-03-09T09:58:55: 2026-03-09T09:58:55.650157Z  INFO admin_api: Email (SMTP) configured: support@exora.solutions @ smtp.hostinger.com
+2026-03-09T10:16:26: 2026-03-09T10:16:26.717833Z  INFO admin_api: Admin API listening on 0.0.0.0:6660
+2026-03-09T10:16:26: 2026-03-09T10:16:26.717851Z  INFO admin_api: Email (SMTP) configured: support@exora.solutions @ smtp.hostinger.com
+2026-03-09T10:17:46: 2026-03-09T10:17:46.612911Z  INFO admin_api: Admin API listening on 0.0.0.0:6660
+2026-03-09T10:17:46: 2026-03-09T10:17:46.612940Z  INFO admin_api: Email (SMTP) configured: support@exora.solutions @ smtp.hostinger.com
+2026-03-09T10:23:05: 2026-03-09T10:23:05.316682Z  INFO admin_api: Admin API listening on 0.0.0.0:6660
+2026-03-09T10:23:05: 2026-03-09T10:23:05.316710Z  INFO admin_api: Email (SMTP) configured: support@exora.solutions @ smtp.hostinger.com

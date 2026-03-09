@@ -1,3 +1,4 @@
+import { APP_ENDPOINT } from "@/config";
 import { useSettings } from "@/hooks";
 import { SettingsIcon } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -44,7 +45,7 @@ export const Settings = () => {
 
         // Fetch user_id from backend
         console.log("🌐 Fetching user_id from backend...");
-        const response = await fetch('http://localhost:8083/api/v1/auth/get-user', {
+        const response = await fetch(`${APP_ENDPOINT}/api/v1/auth/get-user`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

@@ -40,8 +40,8 @@ async function main() {
   const coloredSource = resolve(projectRoot, 'src-tauri', 'icons', '.ghost_logo_peach.png');
 
   if (!existsSync(sourcePng)) {
-    console.error(`Source image not found: ${sourcePng}`);
-    process.exit(1);
+    console.warn(`Source image not found: ${sourcePng} - skipping icon generation (using existing icons if present)`);
+    process.exit(0);
   }
   try {
     mkdirSync(outDir, { recursive: true });

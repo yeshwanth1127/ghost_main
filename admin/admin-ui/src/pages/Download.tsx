@@ -10,7 +10,7 @@ const downloads = [
     Icon: WindowsIcon,
     files: [
       { label: "Installer (.exe)", path: `Ghost_${VERSION}_x64-setup.exe` },
-      { label: "MSI", path: `Ghost_${VERSION}_x64_en-US.msi` },
+      { label: "MSI", path: `msi/Ghost_${VERSION}_x64_en-US.msi` },
     ],
   },
   {

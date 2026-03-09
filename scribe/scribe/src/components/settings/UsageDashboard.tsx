@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { TrendingUp, AlertCircle, DollarSign, Zap, Clock, Copy, Check } from 'lucide-react';
 import { Header, Button } from '@/components';
+import { APP_ENDPOINT } from "@/config";
 import {
   getUserUsageStats,
   getUserUsageHistory,
@@ -362,7 +363,7 @@ const RegistrationForm = ({ onSuccess }: RegistrationFormProps) => {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:8083/api/v1/auth/register', {
+      const response = await fetch(`${APP_ENDPOINT}/api/v1/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

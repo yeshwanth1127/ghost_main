@@ -62,7 +62,8 @@ export interface ModelPricing {
 // API CLIENT
 // ============================================
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { APP_ENDPOINT } from "@/config/constants";
+const API_BASE_URL = import.meta.env.VITE_API_URL || APP_ENDPOINT;
 
 /**
  * Get current month's usage statistics for a user

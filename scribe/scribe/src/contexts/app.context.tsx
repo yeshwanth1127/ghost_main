@@ -1,5 +1,6 @@
 import {
   AI_PROVIDERS,
+  APP_ENDPOINT,
   DEFAULT_SYSTEM_PROMPT,
   SPEECH_TO_TEXT_PROVIDERS,
   STORAGE_KEYS,
@@ -180,7 +181,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           const licenseKey = storage?.license_key || "";
           if (licenseKey) {
             const fallbackResponse = await fetch(
-              "http://localhost:8083/api/v1/auth/validate-license",
+              `${APP_ENDPOINT}/api/v1/auth/validate-license`,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -211,7 +212,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (isActive && licenseKey) {
           try {
             const adminResponse = await fetch(
-              "http://localhost:8083/api/v1/auth/validate-license",
+              `${APP_ENDPOINT}/api/v1/auth/validate-license`,
               {
                 method: "POST",
                 headers: {
@@ -394,6 +395,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
     if (savedScribeApiEnabled !== null) {
       setScribeApiEnabledState(savedScribeApiEnabled === "true");
+    } else if (APP_ENDPOINT.includes("ghost.exora.solutions") || APP_ENDPOINT.includes("api.ghost")) {
+      // Production: default Scribe API enabled so users get backend (no api_key needed)
+      setScribeApiEnabledState(true);
+      safeLocalStorage.setItem(STORAGE_KEYS.Scribe_API_ENABLED, "true");
     }
   };
 

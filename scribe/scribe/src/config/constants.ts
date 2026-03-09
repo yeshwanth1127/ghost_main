@@ -29,10 +29,15 @@ export const MAX_FILES = 6;
 export const DEFAULT_SYSTEM_PROMPT =
   "You are a helpful AI assistant. Be concise. CRITICAL: Match the user's length. For short greetings (hi, hey, wassup): reply in 1 short sentence, no emojis. Example: 'hey' → 'Hey!' or 'Hey, what's up?' — that's it. Never output your internal reasoning, planning, or thinking. Only output the final reply to the user.";
 
-// Ghost gateway (agent mode) WebSocket URL. Set VITE_GHOST_GATEWAY_WS_URL in scribe/.env to match scribe-api PORT.
+// Scribe API base URL (auth, usage, etc.). Set VITE_APP_ENDPOINT at build time for production.
+export const APP_ENDPOINT =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_APP_ENDPOINT) ||
+  "http://localhost:8083";
+
+// Ghost gateway (agent mode) WebSocket URL. Set VITE_GHOST_GATEWAY_WS_URL in scribe/.env to match scribe-api.
 export const GHOST_GATEWAY_WS_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_GHOST_GATEWAY_WS_URL) ||
-  "ws://127.0.0.1:8083/gateway";
+  (APP_ENDPOINT.replace(/^http/, "ws") + "/gateway");
 
 export const DEFAULT_QUICK_ACTIONS = [
   "What should I say?",

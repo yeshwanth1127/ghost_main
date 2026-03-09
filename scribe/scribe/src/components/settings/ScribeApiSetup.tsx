@@ -12,7 +12,7 @@ import {
   Selection,
 } from "@/components";
 import { safeLocalStorage } from "@/lib/storage";
-import { STORAGE_KEYS } from "@/config";
+import { APP_ENDPOINT, STORAGE_KEYS } from "@/config";
 
 interface ActivationResponse {
   activated: boolean;
@@ -160,7 +160,7 @@ export const ScribeApiSetup = () => {
 
     try {
       const response = await fetch(
-        `http://localhost:8083/api/v1/auth/validate-license`,
+        `${APP_ENDPOINT}/api/v1/auth/validate-license`,
         {
           method: "POST",
           headers: {
@@ -266,7 +266,7 @@ export const ScribeApiSetup = () => {
     setSuccess(null);
 
     try {
-      const response = await fetch('http://localhost:8083/api/v1/auth/login', {
+      const response = await fetch(`${APP_ENDPOINT}/api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

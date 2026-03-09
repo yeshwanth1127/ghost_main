@@ -21,6 +21,11 @@ export APP_ENDPOINT="${APP_ENDPOINT:-https://api.ghost.exora.solutions}"
 export PAYMENT_ENDPOINT="${PAYMENT_ENDPOINT:-$APP_ENDPOINT}"
 export API_ACCESS_KEY="${API_ACCESS_KEY:?Set API_ACCESS_KEY - must match your server}"
 
+# Vite env vars (frontend uses these at build time)
+export VITE_APP_ENDPOINT="${APP_ENDPOINT}"
+export VITE_API_URL="${APP_ENDPOINT}"
+export VITE_GHOST_GATEWAY_WS_URL="${APP_ENDPOINT/http/ws}/gateway"
+
 echo "Building Ghost desktop app for production..."
 echo "  APP_ENDPOINT=$APP_ENDPOINT"
 echo "  PAYMENT_ENDPOINT=$PAYMENT_ENDPOINT"
