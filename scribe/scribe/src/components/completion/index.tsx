@@ -40,14 +40,21 @@ export const Completion = ({
       <PopoverAnchor asChild>
         <div className="flex w-full items-center gap-2 min-w-0">
           {/* Left logo beside input */}
-          <img
-            src={"/ghost_logo.png"}
-            alt="Ghost"
-            className="shrink-0 select-none pointer-events-none rounded-md w-9 h-8"
+          <div
+            className="shrink-0 select-none pointer-events-none w-12 h-10 bg-primary"
             style={{
-              opacity: 1,
-              filter: "brightness(1.4) contrast(1.2) saturate(1.1)",
+              maskImage: "url(/ghost_logo.png)",
+              WebkitMaskImage: "url(/ghost_logo.png)",
+              maskSize: "contain",
+              WebkitMaskSize: "contain",
+              maskRepeat: "no-repeat",
+              WebkitMaskRepeat: "no-repeat",
+              maskPosition: "center",
+              WebkitMaskPosition: "center",
+              filter: "brightness(1.3) saturate(1.6) contrast(1.4) drop-shadow(0 0 6px rgba(255, 154, 139, 0.5))",
             }}
+            role="img"
+            aria-label="Ghost"
           />
           {/* Input expands to fill space */}
           <PopoverTrigger asChild className="!border-none !bg-transparent flex-1 min-w-0">
@@ -65,9 +72,12 @@ export const Completion = ({
         align="start"
         side="bottom"
         className="w-[min(896px,calc(100vw-2rem))] max-w-4xl max-h-[calc(100vh-12rem)] min-h-[240px] p-0 pt-2 border shadow-lg overflow-hidden"
-        sideOffset={8}
+        sideOffset={25}
         collisionPadding={16}
         avoidCollisions={true}
+        style={{
+          transform: 'translateX(-15px)',
+        }}
       >
         <ResponsePanel {...completion} />
         <ResponsePanelContent {...completion} />

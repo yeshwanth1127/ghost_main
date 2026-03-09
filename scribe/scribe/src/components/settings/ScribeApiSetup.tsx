@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { LoaderIcon, ChevronDown } from "lucide-react";
+import { LoaderIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 // import { openUrl } from "@tauri-apps/plugin-opener";
 import { useApp } from "@/contexts";
@@ -9,16 +9,7 @@ import {
   Button,
   Header,
   Input,
-  Switch,
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+  Selection,
 } from "@/components";
 import { safeLocalStorage } from "@/lib/storage";
 import { STORAGE_KEYS } from "@/config";
@@ -62,12 +53,10 @@ const SELECTED_Scribe_MODEL_STORAGE_KEY = "selected_Scribe_model";
 
 export const ScribeApiSetup = () => {
   const {
-    ScribeApiEnabled,
     setScribeApiEnabled,
     hasActiveLicense,
     setHasActiveLicense,
     getActiveLicenseStatus,
-    selectedAIProvider,
   } = useApp();
 
   const [storedLicenseKey, setStoredLicenseKey] = useState<string | null>(null);
@@ -78,15 +67,12 @@ export const ScribeApiSetup = () => {
   const [models, setModels] = useState<Model[]>([]);
   const [isModelsLoading, setIsModelsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const [searchValue, setSearchValue] = useState("");
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [showManualLicenseEntry, setShowManualLicenseEntry] = useState(false);
   const [manualLicenseKey, setManualLicenseKey] = useState("");
   const [manualLicenseEmail, setManualLicenseEmail] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const fetchInitiated = useRef(false);
-  const commandListRef = useRef<HTMLDivElement>(null);
 
   // Load license status on component mount
   useEffect(() => {
@@ -97,56 +83,12 @@ export const ScribeApiSetup = () => {
     }
   }, []);
 
-  // Use selected provider from context (source of truth)
-  const isOllamaSelected =
-    selectedAIProvider?.provider === "ollama" || selectedAIProvider?.provider === "exora";
-
-  // Don't show "Exora AI is selected" when user has manually chosen another model (e.g. Nemotron)
-  const [hasSelectedOtherModel, setHasSelectedOtherModel] = useState(false);
+  // Fallback: refetch once if model list is empty after initial fetch
   useEffect(() => {
-    if (!isOllamaSelected) {
-      setHasSelectedOtherModel(false);
-      return;
+    if (models.length === 0 && !isModelsLoading && fetchInitiated.current) {
+      fetchModels();
     }
-    const check = async () => {
-      try {
-        const s = await invoke<{ selected_Scribe_model?: string }>("secure_storage_get");
-        const hasModel = !!(s?.selected_Scribe_model?.trim());
-        setHasSelectedOtherModel(hasModel);
-      } catch {
-        setHasSelectedOtherModel(false);
-      }
-    };
-    check();
-    const interval = setInterval(check, 1500);
-    return () => clearInterval(interval);
-  }, [isOllamaSelected]);
-
-  // Fallback: also check localStorage when context may not be ready (e.g. initial load)
-  useEffect(() => {
-    if (selectedAIProvider?.provider) return; // Context has it, no need to poll
-    const checkProvider = () => {
-      const selectedProviderJson = safeLocalStorage.getItem(STORAGE_KEYS.SELECTED_AI_PROVIDER);
-      if (selectedProviderJson) {
-        try {
-          JSON.parse(selectedProviderJson); // Validate JSON
-          if (models.length === 0 && !isModelsLoading && fetchInitiated.current) {
-            fetchModels();
-          }
-        } catch {}
-      }
-    };
-    const interval = setInterval(checkProvider, 1000);
-    checkProvider();
-    return () => clearInterval(interval);
-  }, [models.length, isModelsLoading, selectedAIProvider?.provider]);
-
-  // Scroll to top when search value changes
-  useEffect(() => {
-    if (commandListRef.current) {
-      commandListRef.current.scrollTop = 0;
-    }
-  }, [searchValue]);
+  }, [models.length, isModelsLoading]);
 
   const fetchModels = async () => {
     setIsModelsLoading(true);
@@ -417,10 +359,23 @@ export const ScribeApiSetup = () => {
     }
   };
 
-  const handleModelSelect = async (model: Model) => {
+  const handleModelSelect = async (modelId: string) => {
+    if (modelId === "__none__") {
+      setSelectedModel(null);
+      try {
+        await invoke("secure_storage_remove", {
+          keys: [SELECTED_Scribe_MODEL_STORAGE_KEY],
+        });
+      } catch (error) {
+        console.error("Failed to clear model selection:", error);
+      }
+      return;
+    }
+
+    const model = models.find((m) => m.id === modelId);
+    if (!model) return;
+
     setSelectedModel(model);
-    setIsPopoverOpen(false); // Close popover when model is selected
-    setSearchValue(""); // Reset search when model is selected
     try {
       await invoke("secure_storage_save", {
         items: [
@@ -435,71 +390,6 @@ export const ScribeApiSetup = () => {
       setError("Failed to save model selection.");
     }
   };
-
-  const handlePopoverOpenChange = (open: boolean) => {
-    setIsPopoverOpen(open);
-    if (open) {
-      setSearchValue(""); // Reset search when popover opens
-    }
-  };
-
-  const providers = [...new Set(models.map((model) => model.provider))];
-  const capitalizedProviders = providers.map(
-    (p) => p.charAt(0).toUpperCase() + p.slice(1)
-  );
-
-  let providerList;
-  if (capitalizedProviders.length === 0) {
-    providerList = null;
-  } else if (capitalizedProviders.length === 1) {
-    providerList = capitalizedProviders[0];
-  } else if (capitalizedProviders.length === 2) {
-    providerList = capitalizedProviders.join(" and ");
-  } else {
-    const lastProvider = capitalizedProviders.pop();
-    providerList = `${capitalizedProviders.join(", ")}, and ${lastProvider}`;
-  }
-
-  const title = isModelsLoading
-    ? "Loading Models..."
-    : `Ghost supports ${models?.length} model${
-        models?.length !== 1 ? "s" : ""
-      }`;
-
-  const description = isModelsLoading
-    ? "Fetching the list of supported models..."
-    : providerList
-    ? `Access top models from providers like ${providerList}. and select smaller models for faster responses.`
-    : "Explore all the models Ghost supports.";
-
-  const selectedIsVisionCapable = (() => {
-    const modalityHasVision = (selectedModel?.modality || "")
-      .toLowerCase()
-      .includes("vision");
-    if (modalityHasVision) return true;
-
-    const idOrName = `${selectedModel?.id || ""} ${selectedModel?.name || ""}`.toLowerCase();
-    // Heuristic: treat well-known vision-capable families as vision even if modality is missing
-    const VISION_HINTS = [
-      "vision",
-      "vl",
-      "gpt-4o",
-      "gpt-4.1",
-      "gpt-4-turbo",
-      "claude-3",
-      "sonnet",
-      "haiku",
-      "opus",
-      "gemini",
-      "llava",
-      "llama-vision",
-    ];
-    return VISION_HINTS.some((hint) => idOrName.includes(hint));
-  })();
-
-  const suggestedVisionModels = models
-    .filter((m) => (m.modality || "").toLowerCase().includes("vision"))
-    .slice(0, 3);
 
   return (
     <div id="Scribe-api" className="space-y-3 -mt-2">
@@ -535,111 +425,31 @@ export const ScribeApiSetup = () => {
             </p>
           </div>
         )}
-        <Header title={title} description={description} />
-        {isOllamaSelected && !hasSelectedOtherModel && (
-          <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950">
-            <p className="text-sm text-blue-700 dark:text-blue-400">
-              <strong>Exora AI</strong> is selected. Or select a different model below to use OpenRouter instead.
-            </p>
-          </div>
-        )}
-        <Popover
-            modal={true}
-            open={isPopoverOpen}
-            onOpenChange={handlePopoverOpenChange}
-          >
-            <PopoverTrigger
-              asChild
-              disabled={isModelsLoading}
-              className="cursor-pointer flex justify-start"
-            >
-              <Button
-                variant="outline"
-                className="h-11 text-start shadow-none w-full"
-              >
-                {selectedModel ? selectedModel.name : "Select model"}{" "}
-                <ChevronDown />
-              </Button>
-            </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            side="bottom"
-            className="w-[calc(100vw-4rem)] h-[46vh]"
-          >
-            <Command shouldFilter={true}>
-              <CommandInput
-                placeholder="Select model..."
-                value={searchValue}
-                onValueChange={setSearchValue}
-              />
-              <CommandList
-                ref={commandListRef}
-                className="overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-track]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/30"
-              >
-                <CommandEmpty>
-                  No models found. Please try again later.
-                </CommandEmpty>
-                <CommandGroup>
-                  {models.map((model, index) => (
-                    <CommandItem
-                      disabled={!model?.isAvailable}
-                      key={`${model?.id}-${index}`}
-                      className="cursor-pointer"
-                      onSelect={() => handleModelSelect(model)}
-                    >
-                      <div className="flex flex-col">
-                        <div className="flex flex-row items-center gap-2">
-                          <p className="text-sm font-medium">{`${model?.name}`}</p>
-                          <div className="text-xs border border-input/50 bg-muted/50 rounded-full px-2">
-                            {model?.modality}
-                          </div>
-                          {model?.isAvailable ? (
-                            <div className="text-xs text-orange-600 bg-white rounded-full px-2">
-                              {model?.provider}
-                            </div>
-                          ) : (
-                            <div className="text-xs text-red-600 bg-white rounded-full px-2">
-                              Not Available
-                            </div>
-                          )}
-                        </div>
-                        <p
-                          className="text-sm text-muted-foreground line-clamp-2"
-                          title={model?.description}
-                        >
-                          {model?.description}
-                        </p>
-                      </div>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-        {selectedModel && !selectedIsVisionCapable ? (
-          <div className="mt-2 p-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-            <p className="text-sm text-amber-800 dark:text-amber-300">
-              This model does not support image inputs. For messages with images, please switch to a vision-capable model
-              {suggestedVisionModels.length > 0 ? 
-                <> such as {suggestedVisionModels.map((m) => (
-                  <button
-                    key={m.id}
-                    className="underline underline-offset-2 hover:opacity-80 mx-1"
-                    onClick={() => handleModelSelect(m)}
-                  >
-                    {m.name}
-                  </button>
-                )).reduce((prev, curr, i) => (
-                  // insert commas between items gracefully
-                  <>
-                    {prev}{i > 0 ? ", " : ""}{curr}
-                  </>
-                ))}
-                </> : null}.
-            </p>
-          </div>
-        ) : null}
+        <div className="space-y-2">
+          <Header
+            title="OpenRouter Model"
+            description="Select a model to route requests through OpenRouter."
+          />
+          <Selection
+            selected={selectedModel?.id ?? "__none__"}
+            options={[
+              { label: "No model override", value: "__none__", isCustom: false },
+              ...models.map((m) => ({
+                label: `${m.name} (${m.provider})`,
+                value: m.id,
+                isCustom: false,
+              })),
+            ]}
+            placeholder={isModelsLoading ? "Loading models..." : "Select OpenRouter model"}
+            isLoading={isModelsLoading}
+            disableWhileLoading={false}
+            contentSide="bottom"
+            contentAlign="start"
+            contentSideOffset={8}
+            contentAvoidCollisions={false}
+            onChange={handleModelSelect}
+          />
+        </div>
         {/* License Key Input or Display */}
         <div className="space-y-2">
           {!storedLicenseKey ? (
@@ -852,23 +662,6 @@ export const ScribeApiSetup = () => {
             </>
           )}
         </div>
-      </div>
-      <div className="flex justify-between items-center">
-        <Header
-          title={`${ScribeApiEnabled ? "Disable" : "Enable"} Ghost API`}
-          description={
-            storedLicenseKey
-              ? ScribeApiEnabled
-                ? "Using all Ghost APIs for audio, and chat."
-                : "Using all your own AI Providers for audio, and chat."
-              : "A valid license is required to enable Ghost API or you can use your own AI Providers and STT Providers."
-          }
-        />
-        <Switch
-          checked={ScribeApiEnabled}
-          onCheckedChange={setScribeApiEnabled}
-          disabled={!storedLicenseKey || !hasActiveLicense} // Disable if no license is stored
-        />
       </div>
     </div>
   );

@@ -83,8 +83,8 @@ const App = () => {
   // Show mode selector if no mode selected
   if (appMode === null) {
     return (
-      <div className="w-screen h-screen flex overflow-hidden justify-center items-center px-3 py-3">
-        <Card className="w-full max-w-3xl flex flex-col items-center gap-3 px-4 py-6 overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur">
+      <div className="w-screen h-screen flex overflow-hidden justify-center items-center px-3 py-3 pointer-events-none">
+        <Card className="w-full max-w-3xl flex flex-col items-center gap-3 px-4 py-6 overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur pointer-events-auto">
           <div className="w-full">
             <ModeSelector
               onModeSelect={(mode) => {
@@ -101,8 +101,8 @@ const App = () => {
   // Show agent mode UI
   if (appMode === "agent") {
     return (
-      <div className="w-screen h-screen flex overflow-hidden justify-center items-stretch px-3 py-3">
-        <Card className="w-full max-w-5xl h-full max-h-[calc(100vh-1.5rem)] flex flex-col items-stretch gap-3 px-4 py-4 min-h-0 overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur">
+      <div className="w-screen h-screen flex overflow-hidden justify-center items-stretch px-3 py-3 pointer-events-none">
+        <Card className="w-full max-w-5xl h-full max-h-[calc(100vh-1.5rem)] flex flex-col items-stretch gap-3 px-4 py-4 min-h-0 overflow-hidden rounded-2xl border border-input/50 bg-background/95 shadow-xl backdrop-blur pointer-events-auto">
           <div className="w-full flex-shrink-0 flex flex-row items-center justify-between mb-2">
             <h2 className="text-lg font-semibold">Agent Mode</h2>
             <Button
@@ -134,7 +134,7 @@ const App = () => {
   // Show collapsed logo mode (floating logo only)
   if (isCollapsed) {
     return (
-      <div className="w-full h-full flex items-center justify-center bg-transparent">
+      <div className="w-full h-full flex items-center justify-center bg-transparent pointer-events-none">
         <FloatingLogo onExpand={handleExpand} />
       </div>
     );
@@ -143,13 +143,13 @@ const App = () => {
   // Show chat mode (classic UI)
   return (
     <div
-      className={`w-screen h-screen min-h-screen flex overflow-visible justify-center items-start px-3 py-3 ${
-        isHidden ? "hidden pointer-events-none" : ""
+      className={`w-screen h-screen min-h-screen flex overflow-visible justify-center items-start px-3 py-3 pointer-events-none ${
+        isHidden ? "hidden" : ""
       }`}
     >
       <Card
         ref={containerRef as any}
-        className="w-full max-w-4xl flex flex-row items-center gap-3 px-4 py-3 min-h-[96px] overflow-visible rounded-2xl border border-input/50 bg-card shadow-xl backdrop-blur"
+        className="w-full max-w-4xl flex flex-row items-center gap-3 px-4 py-3 min-h-[96px] overflow-visible rounded-2xl border border-input/50 bg-card shadow-xl backdrop-blur pointer-events-auto"
       >
         {trialExpired ? (
           <div className="absolute top-1 left-1 right-1 mx-2 px-3 py-1 text-xs rounded bg-amber-100 text-amber-700 border border-amber-200">

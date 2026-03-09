@@ -11,23 +11,17 @@ import {
 } from "@/components";
 import { Disclaimer } from "./Disclaimer";
 import { SystemPrompt } from "./system-prompt";
-import { ScreenshotConfigs } from "./ScreenshotConfigs";
 import { AudioSelection } from "./AudioSelection";
 import { AutostartToggle } from "./AutostartToggle";
 import { AppIconToggle } from "./AppIconToggle";
 import { AlwaysOnTopToggle } from "./AlwaysOnTopToggle";
-import { TitleToggle } from "./TitleToggle";
+import { AIProviders } from "./ai-configs";
 import { STTProviders } from "./stt-configs";
 import { DeleteChats } from "./DeleteChats";
 import { ScribeApiSetup } from "./ScribeApiSetup";
-import { ShortcutManager } from "./shortcuts";
 import Theme from "./Theme";
-import { SettingsNavigation } from "./SettingsNavigation";
-import { CursorSelection } from "./Cursor";
-import { ApplyForLeave } from "./ApplyForLeave";
 import { ModeToggle } from "./ModeToggle";
 import { UsageDashboard } from "./UsageDashboard";
-import { VoiceActivation } from "./VoiceActivation";
 
 export const Settings = () => {
   const settings = useSettings();
@@ -83,6 +77,15 @@ export const Settings = () => {
     console.log("📊 UserId state changed:", userId);
   }, [userId]);
 
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      settings?.setIsPopoverOpen(false);
+    };
+
+    window.addEventListener("blur", handleWindowBlur);
+    return () => window.removeEventListener("blur", handleWindowBlur);
+  }, [settings]);
+
   return (
     <Popover
       open={settings?.isPopoverOpen}
@@ -101,24 +104,28 @@ export const Settings = () => {
 
       {/* Settings Panel */}
       <PopoverContent
-        align="end"
+        align="start"
         side="bottom"
-        className="select-none w-[600px] max-w-[90vw] p-0 border border-input/50 rounded-lg overflow-hidden"
-        sideOffset={8}
+        className="select-none w-full max-w-4xl p-0 border border-input/50 rounded-lg overflow-hidden pointer-events-auto flex flex-col"
+        sideOffset={34}
+        collisionPadding={16}
+        avoidCollisions={true}
+        style={{
+          transform: 'translateX(-135px)',
+          maxHeight: 'calc(100vh - 40px)',
+        }}
       >
-        <ScrollArea className="h-[calc(100vh-9rem)]">
+        <ScrollArea className="h-[calc(100vh-13rem)]">
           <div className="flex min-h-full">
-            <div className="p-6 space-y-6 w-full flex flex-col justify-center">
-            {/* Settings Navigation */}
-            <SettingsNavigation />
-
+            <div className="px-4 py-6 space-y-6 w-full flex flex-col justify-center pointer-events-auto">
             {/* Usage & Billing Dashboard */}
             <UsageDashboard userId={userId} />
 
-            {/* Ghost API Setup - includes the single model picker (Ghost supports X models) */}
+            {/* Ghost API Setup */}
             <ScribeApiSetup />
 
-            {/* AI Providers section removed - app requires license; model picker is the only way to select */}
+            {/* Provider Selection */}
+            <AIProviders {...settings} />
 
             {/* STT Providers */}
             <STTProviders {...settings} />
@@ -129,17 +136,8 @@ export const Settings = () => {
             {/* Theme */}
             <Theme />
 
-            {/* Screenshot Configs */}
-            <ScreenshotConfigs {...settings} />
-
-            {/* Cursor Selection */}
-            <CursorSelection />
-
             {/* Mode Toggle */}
             <ModeToggle />
-
-            {/* Keyboard Shortcuts */}
-            <ShortcutManager />
 
             {/* Audio Selection */}
             <AudioSelection />
@@ -153,17 +151,8 @@ export const Settings = () => {
             {/* Always On Top Toggle */}
             <AlwaysOnTopToggle />
 
-            {/* Voice Activation */}
-            <VoiceActivation />
-
-            {/* Title Toggle */}
-            <TitleToggle />
-
             {/* Delete Chat History */}
             <DeleteChats {...settings} />
-
-            {/* Apply for Leave */}
-            <ApplyForLeave />
             </div>
           </div>
 

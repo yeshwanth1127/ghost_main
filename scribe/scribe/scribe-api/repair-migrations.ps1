@@ -1,6 +1,11 @@
 # Repair orphaned migration version in _sqlx_migrations
-# Run this if you get: VersionMissing(3)
-# Usage: .\repair-migrations.ps1
+# Run this if you get: VersionMissing(6) or similar errors
+# Usage: .\repair-migrations.ps1 [version_number]
+# Example: .\repair-migrations.ps1 6
+
+param(
+    [int]$Version = 6
+)
 
 $envFile = ".env"
 if (-not (Test-Path $envFile)) {
@@ -14,11 +19,11 @@ if (-not $dbUrl) {
     exit 1
 }
 
-Write-Host "Removing orphaned migration version 3 from _sqlx_migrations..." -ForegroundColor Yellow
-$result = psql $dbUrl -c "DELETE FROM _sqlx_migrations WHERE version = 3;"
+Write-Host "Removing orphaned migration version $Version from _sqlx_migrations..." -ForegroundColor Yellow
+$result = psql $dbUrl -c "DELETE FROM _sqlx_migrations WHERE version = $Version;"
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Done. You can now run: cargo run" -ForegroundColor Green
 } else {
-    Write-Host "Failed. Try running manually: psql `$DATABASE_URL -c `"DELETE FROM _sqlx_migrations WHERE version = 3;`"" -ForegroundColor Red
+    Write-Host "Failed. Try running manually: psql `$DATABASE_URL -c `"DELETE FROM _sqlx_migrations WHERE version = $Version;`"" -ForegroundColor Red
     exit 1
 }

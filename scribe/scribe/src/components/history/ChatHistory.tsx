@@ -39,11 +39,16 @@ export const ChatHistory = ({
           </Button>
         </PopoverTrigger>
 
-        <PopoverContent
-          align="end"
-          side="bottom"
-          className="select-none w-[min(380px,90vw)] min-w-[320px] p-0 border overflow-hidden border-input/50 rounded-xl shadow-lg"
-          sideOffset={8}
+              <PopoverContent
+                align="start"
+                side="bottom"
+                className="select-none w-full max-w-4xl p-0 border overflow-hidden border-input/50 rounded-xl shadow-lg"
+                sideOffset={34}
+                collisionPadding={16}
+                avoidCollisions={true}
+                style={{
+                  transform: 'translateX(-135px)',
+                }}
         >
           {historyHook.viewingConversation ? (
             <MessageHistoryView

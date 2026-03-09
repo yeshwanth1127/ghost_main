@@ -207,7 +207,7 @@ export function getPlanColor(plan: string): string {
   const colors: Record<string, string> = {
     free: 'text-gray-500',
     starter: 'text-blue-500',
-    pro: 'text-purple-500',
+    pro: 'text-primary',
     power: 'text-orange-500',
   };
   return colors[plan] || 'text-gray-500';

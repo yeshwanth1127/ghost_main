@@ -17,8 +17,12 @@ import {
   generateRequestId,
   trimHistoryToContextWindow,
   getFactsForConversation,
+  setFactsForConversation,
   isScreenContentQuery,
+  extractFactsFromExchange,
+  shouldExtractFacts,
 } from "@/lib";
+import { estimateMessageTokens } from "@/lib/utils/token-counter";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useActionAssistant } from "./useActionAssistant";
@@ -680,6 +684,40 @@ export const useCompletion = () => {
           currentConversationId: conversationId,
           conversationHistory: newMessages,
         }));
+
+        // Semantic memory: extract and save facts when user shares name, preferences, etc.
+        const turnCount = newMessages.filter((m) => m.role === "user").length;
+        const totalTokens = newMessages.reduce(
+          (sum, m) => sum + estimateMessageTokens(m),
+          0
+        );
+        if (
+          shouldExtractFacts(userMessage, turnCount, totalTokens, false) &&
+          conversationId
+        ) {
+          try {
+            const useScribeAPI = await shouldUseScribeAPI(selectedAIProvider);
+            const provider = useScribeAPI
+              ? undefined
+              : allAiProviders.find(
+                  (p) => p.id === selectedAIProvider.provider
+                );
+            const messagesForExtraction = newMessages.slice(-6).map((m) => ({
+              role: m.role,
+              content: m.content,
+            }));
+            const facts = await extractFactsFromExchange(messagesForExtraction, {
+              provider,
+              selectedProvider: selectedAIProvider,
+            });
+            if (Object.keys(facts).length > 0) {
+              await setFactsForConversation(conversationId, facts);
+              console.log("[useCompletion] Saved facts:", Object.keys(facts));
+            }
+          } catch (err) {
+            console.warn("[useCompletion] Fact extraction failed:", err);
+          }
+        }
       } catch (error) {
         console.error("Failed to save conversation:", error);
         // Show error to user
@@ -693,6 +731,7 @@ export const useCompletion = () => {
       state.currentConversationId,
       state.conversationHistory,
       selectedAIProvider,
+      allAiProviders,
     ]
   );
 

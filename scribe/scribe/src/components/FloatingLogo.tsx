@@ -29,11 +29,11 @@ export const FloatingLogo = ({ onExpand }: FloatingLogoProps) => {
 
   return (
     <div
-      className="w-full h-full flex items-center justify-center select-none bg-transparent"
+      className="w-full h-full flex items-center justify-center select-none bg-transparent pointer-events-none"
       data-tauri-drag-region
     >
       <div
-        className="flex items-center justify-center cursor-pointer w-14 h-14 rounded-full hover:bg-white/10 transition-colors"
+        className="flex items-center justify-center cursor-pointer w-20 h-20 rounded-full hover:bg-white/10 transition-colors pointer-events-auto"
         style={{ WebkitAppRegion: "no-drag", appRegion: "no-drag" } as React.CSSProperties}
         onClick={onExpand}
         onPointerDown={handlePointerDown}
@@ -48,11 +48,21 @@ export const FloatingLogo = ({ onExpand }: FloatingLogoProps) => {
         }}
         aria-label="Click to expand Ghost"
       >
-        <img
-          src="/ghost_logo.png"
-          alt="Ghost"
-          className="w-12 h-12 object-contain pointer-events-none"
-          draggable={false}
+        <div
+          className="w-16 h-16 bg-primary pointer-events-none"
+          style={{
+            maskImage: "url(/ghost_logo.png)",
+            WebkitMaskImage: "url(/ghost_logo.png)",
+            maskSize: "contain",
+            WebkitMaskSize: "contain",
+            maskRepeat: "no-repeat",
+            WebkitMaskRepeat: "no-repeat",
+            maskPosition: "center",
+            WebkitMaskPosition: "center",
+            filter: "brightness(1.3) saturate(1.6) contrast(1.4) drop-shadow(0 0 8px rgba(255, 154, 139, 0.6))",
+          }}
+          role="img"
+          aria-label="Ghost"
         />
       </div>
     </div>
