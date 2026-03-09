@@ -17,7 +17,9 @@ pub fn setup_main_window(app: &mut App) -> Result<(), Box<dyn std::error::Error>
 
     // Ensure an initial size that fits the full UI before React mounts
     let _ = window.set_size(Size::Logical(LogicalSize::new(1200.0, 800.0)));
-    position_window_top_center(&window, TOP_OFFSET)?;
+    
+    // Try to position window, but don't fail if it doesn't work
+    let _ = position_window_top_center(&window, TOP_OFFSET);
 
     // Ensure window is visible and focused on startup
     let _ = window.show();
@@ -37,19 +39,26 @@ pub fn position_window_top_center(
     window: &WebviewWindow,
     y_offset: i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Get the primary monitor
-    if let Some(monitor) = window.primary_monitor()? {
-        let monitor_size = monitor.size();
-        let window_size = window.outer_size()?;
+    // Get the primary monitor - use a timeout-safe approach
+    match window.primary_monitor() {
+        Ok(Some(monitor)) => {
+            if let Ok(window_size) = window.outer_size() {
+                let monitor_size = monitor.size();
+                
+                // Calculate center X position
+                let center_x = (monitor_size.width as i32 - window_size.width as i32) / 2;
 
-        // Calculate center X position
-        let center_x = (monitor_size.width as i32 - window_size.width as i32) / 2;
-
-        // Set the window position
-        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-            x: center_x,
-            y: y_offset,
-        }))?;
+                // Set the window position - ignore errors
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                    x: center_x,
+                    y: y_offset,
+                }));
+            }
+        }
+        _ => {
+            // If monitor detection fails, just skip positioning
+            eprintln!("Warning: Could not get primary monitor for window positioning");
+        }
     }
 
     Ok(())
@@ -142,5 +151,39 @@ pub fn get_bottom_right_position_for_size(
     let monitor_pos = monitor.position();
     let x = monitor_pos.x + (monitor_size.width as i32) - (width as i32);
     let y = monitor_pos.y + (monitor_size.height as i32) - (height as i32);
+    Ok((x, y))
+}
+
+/// Returns (x, y) for the collapsed logo. Uses work area (excludes taskbar)
+/// so the logo stays visible above the taskbar. Large margin keeps it in view.
+const LOGO_MARGIN_RIGHT: i32 = 600;
+const LOGO_MARGIN_BOTTOM: i32 = 100;
+
+#[tauri::command]
+pub fn get_logo_position_clamped(
+    window: tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+    _saved_x: Option<i32>,
+    _saved_y: Option<i32>,
+) -> Result<(i32, i32), String> {
+    let monitor = window
+        .primary_monitor()
+        .map_err(|e| format!("Failed to get primary monitor: {}", e))?
+        .ok_or("No primary monitor")?;
+
+    let work = monitor.work_area();
+    let wx = work.position.x;
+    let wy = work.position.y;
+    let ww = work.size.width as i32;
+    let wh = work.size.height as i32;
+    let w = width as i32;
+    let h = height as i32;
+
+    let max_x = wx + ww - w - LOGO_MARGIN_RIGHT;
+    let max_y = wy + wh - h - LOGO_MARGIN_BOTTOM;
+    let x = max_x.clamp(wx, wx + ww - w);
+    let y = max_y.clamp(wy, wy + wh - h);
+
     Ok((x, y))
 }

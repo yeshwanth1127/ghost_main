@@ -23,23 +23,19 @@ export const useApp = () => {
 
   const handleCollapse = useCallback(async () => {
     try {
-      const { logoPosition } = getVoiceActivationState();
-      let x: number;
-      let y: number;
-      if (logoPosition) {
-        x = logoPosition.x;
-        y = logoPosition.y;
-      } else {
-        const pos = await invoke<[number, number]>(
-          "get_bottom_right_position_for_size",
-          { width: LOGO_SIZE, height: LOGO_SIZE }
-        );
-        x = pos[0];
-        y = pos[1];
-      }
+      await invoke("force_show_window");
+      await invoke("set_always_on_top", { enabled: true });
+      const [x, y] = await invoke<[number, number]>("get_logo_position_clamped", {
+        width: LOGO_SIZE,
+        height: LOGO_SIZE,
+        saved_x: null,
+        saved_y: null,
+      });
       await invoke("set_window_size", { width: LOGO_SIZE, height: LOGO_SIZE });
       await invoke("set_window_position", { x, y });
-      await invoke("set_always_on_top", { enabled: true });
+      updateLogoPosition(x, y);
+      await new Promise((r) => setTimeout(r, 150));
+      await invoke("force_show_window");
       setIsCollapsed(true);
     } catch (e) {
       console.error("Failed to collapse:", e);
@@ -84,6 +80,10 @@ export const useApp = () => {
   useEffect(() => {
     const initializeShortcuts = async () => {
       try {
+        // Safety: ensure app window is visible on startup even if a prior toggle desynced state.
+        setIsHidden(false);
+        await invoke("force_show_window").catch(() => {});
+
         const config = getShortcutsConfig();
         await invoke("update_shortcuts", { config });
       } catch (error) {

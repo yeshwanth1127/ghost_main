@@ -3,6 +3,17 @@ import { UseSettingsReturn } from "@/types";
 import curl2Json, { ResultJSON } from "@bany/curl-to-json";
 import { KeyIcon, TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+
+interface OpenRouterModel {
+  provider: string;
+  name: string;
+  id: string;
+  model: string;
+  description: string;
+  modality: string;
+  isAvailable: boolean;
+}
 
 export const Providers = ({
   allSttProviders,
@@ -12,6 +23,26 @@ export const Providers = ({
 }: UseSettingsReturn) => {
   const [localSelectedProvider, setLocalSelectedProvider] =
     useState<ResultJSON | null>(null);
+  const [models, setModels] = useState<OpenRouterModel[]>([]);
+  const [isModelsLoading, setIsModelsLoading] = useState(false);
+
+  useEffect(() => {
+    const loadModels = async () => {
+      setIsModelsLoading(true);
+      try {
+        // Uses backend env-configured API access key, same flow as chat settings.
+        const fetched = await invoke<OpenRouterModel[]>("fetch_models");
+        setModels(Array.isArray(fetched) ? fetched : []);
+      } catch (e) {
+        console.error("[STT Providers] Failed to fetch OpenRouter models:", e);
+        setModels([]);
+      } finally {
+        setIsModelsLoading(false);
+      }
+    };
+
+    loadModels();
+  }, []);
 
   useEffect(() => {
     if (selectedSttProvider?.provider) {
@@ -41,136 +72,6 @@ export const Providers = ({
 
   return (
     <div className="space-y-3">
-      <div className="space-y-2">
-        <Header
-          title="Select STT Provider"
-          description="Select your preferred STT service provider or custom providers to get started."
-        />
-        <Selection
-          selected={selectedSttProvider?.provider}
-          options={allSttProviders?.map((provider) => {
-            const json = curl2Json(provider?.curl);
-            return {
-              label: provider?.isCustom
-                ? json?.url || "Custom Provider"
-                : provider?.id || "Custom Provider",
-              value: provider?.id || "Custom Provider",
-              isCustom: provider?.isCustom,
-            };
-          })}
-          placeholder="Choose your STT provider"
-          onChange={(value) => {
-            onSetSelectedSttProvider({
-              provider: value,
-              variables: {},
-            });
-          }}
-        />
-      </div>
-      {localSelectedProvider ? (
-        <Header
-          title={`Method: ${
-            localSelectedProvider?.method || "Invalid"
-          }, Endpoint: ${localSelectedProvider?.url || "Invalid"}`}
-          description={`If you want to use different url or method, you can always create a custom provider.`}
-        />
-      ) : null}
-      {findKeyAndValue("api_key") ? (
-        <div className="space-y-2">
-          <Header
-            title="API Key"
-            description={`Enter your ${
-              allSttProviders?.find(
-                (p) => p?.id === selectedSttProvider?.provider
-              )?.isCustom
-                ? "Custom Provider"
-                : selectedSttProvider?.provider
-            } API key to authenticate and access STT models. Your key is stored locally and never shared.`}
-          />
-
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                placeholder="**********"
-                value={getApiKeyValue()}
-                onChange={(value) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedSttProvider) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      [apiKeyVar.key]:
-                        typeof value === "string" ? value : value.target.value,
-                    },
-                  });
-                }}
-                onKeyDown={(e) => {
-                  const apiKeyVar = findKeyAndValue("api_key");
-                  if (!apiKeyVar || !selectedSttProvider) return;
-
-                  onSetSelectedSttProvider({
-                    ...selectedSttProvider,
-                    variables: {
-                      ...selectedSttProvider.variables,
-                      [apiKeyVar.key]: (e.target as HTMLInputElement).value,
-                    },
-                  });
-                }}
-                disabled={false}
-                className="flex-1 h-11 border-1 border-input/50 focus:border-primary/50 transition-colors"
-              />
-              {isApiKeyEmpty() ? (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedSttProvider || isApiKeyEmpty())
-                      return;
-
-                    onSetSelectedSttProvider({
-                      ...selectedSttProvider,
-                      variables: {
-                        ...selectedSttProvider.variables,
-                        [apiKeyVar.key]: getApiKeyValue(),
-                      },
-                    });
-                  }}
-                  disabled={isApiKeyEmpty()}
-                  size="icon"
-                  className="shrink-0 h-11 w-11"
-                  title="Submit API Key"
-                >
-                  <KeyIcon className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => {
-                    const apiKeyVar = findKeyAndValue("api_key");
-                    if (!apiKeyVar || !selectedSttProvider) return;
-
-                    onSetSelectedSttProvider({
-                      ...selectedSttProvider,
-                      variables: {
-                        ...selectedSttProvider.variables,
-                        [apiKeyVar.key]: "",
-                      },
-                    });
-                  }}
-                  size="icon"
-                  variant="destructive"
-                  className="shrink-0 h-11 w-11"
-                  title="Remove API Key"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <div className="space-y-4 mt-2">
         {sttVariables
           ?.filter(
@@ -184,40 +85,81 @@ export const Providers = ({
 
             return (
               <div className="space-y-1" key={variable?.key}>
-                <Header
-                  title={variable?.value || ""}
-                  description={`add your preferred ${variable?.key?.replace(
-                    /_/g,
-                    " "
-                  )} for ${
-                    allSttProviders?.find(
-                      (p) => p?.id === selectedSttProvider?.provider
-                    )?.isCustom
-                      ? "Custom Provider"
-                      : selectedSttProvider?.provider
-                  }`}
-                />
-                <TextInput
-                  placeholder={`Enter ${
-                    allSttProviders?.find(
-                      (p) => p?.id === selectedSttProvider?.provider
-                    )?.isCustom
-                      ? "Custom Provider"
-                      : selectedSttProvider?.provider
-                  } ${variable?.key?.replace(/_/g, " ") || "value"}`}
-                  value={getVariableValue()}
-                  onChange={(value) => {
-                    if (!variable?.key || !selectedSttProvider) return;
+                {variable?.key === "model" ? (
+                  <>
+                    <Header
+                      title="OpenRouter STT Model"
+                      description="Choose a model from OpenRouter (loaded with env API key)."
+                    />
+                    <Selection
+                      selected={getVariableValue() || ""}
+                      options={models.map((m) => ({
+                        label: `${m.name} (${m.provider})`,
+                        value: m.id,
+                        isCustom: false,
+                      }))}
+                      placeholder={
+                        isModelsLoading
+                          ? "Loading OpenRouter models..."
+                          : "Select OpenRouter model"
+                      }
+                      isLoading={isModelsLoading}
+                      disableWhileLoading={false}
+                      contentSide="bottom"
+                      contentAlign="start"
+                      contentSideOffset={8}
+                      contentAvoidCollisions={false}
+                      onChange={(value) => {
+                        if (!variable?.key || !selectedSttProvider) return;
 
-                    onSetSelectedSttProvider({
-                      ...selectedSttProvider,
-                      variables: {
-                        ...selectedSttProvider.variables,
-                        [variable.key]: value,
-                      },
-                    });
-                  }}
-                />
+                        onSetSelectedSttProvider({
+                          ...selectedSttProvider,
+                          variables: {
+                            ...selectedSttProvider.variables,
+                            [variable.key]: value,
+                          },
+                        });
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Header
+                      title={variable?.value || ""}
+                      description={`add your preferred ${variable?.key?.replace(
+                        /_/g,
+                        " "
+                      )} for ${
+                        allSttProviders?.find(
+                          (p) => p?.id === selectedSttProvider?.provider
+                        )?.isCustom
+                          ? "Custom Provider"
+                          : selectedSttProvider?.provider
+                      }`}
+                    />
+                    <TextInput
+                      placeholder={`Enter ${
+                        allSttProviders?.find(
+                          (p) => p?.id === selectedSttProvider?.provider
+                        )?.isCustom
+                          ? "Custom Provider"
+                          : selectedSttProvider?.provider
+                      } ${variable?.key?.replace(/_/g, " ") || "value"}`}
+                      value={getVariableValue()}
+                      onChange={(value) => {
+                        if (!variable?.key || !selectedSttProvider) return;
+
+                        onSetSelectedSttProvider({
+                          ...selectedSttProvider,
+                          variables: {
+                            ...selectedSttProvider.variables,
+                            [variable.key]: value,
+                          },
+                        });
+                      }}
+                    />
+                  </>
+                )}
               </div>
             );
           })}

@@ -598,8 +598,8 @@ export const AgentView = () => {
 
           {/* Current Plan */}
           {runState.plan && (
-            <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-              <h4 className="font-medium mb-2 text-purple-900 dark:text-purple-100">
+            <div className="mb-4 p-3 bg-primary/10 border border-primary/20 rounded-lg">
+              <h4 className="font-medium mb-2 text-primary">
                 Current Plan
               </h4>
               <div className="text-sm text-muted-foreground mb-2">

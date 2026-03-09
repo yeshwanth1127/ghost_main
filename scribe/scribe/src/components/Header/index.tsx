@@ -25,7 +25,7 @@ export const Header = ({
       <div className="flex flex-col">
         <Label
           className={`${cn(
-            "font-semibold text-purple-600",
+            "font-semibold text-primary",
             isMainTitle ? "text-lg" : "text-sm "
           )} ${titleClassName}`}
         >

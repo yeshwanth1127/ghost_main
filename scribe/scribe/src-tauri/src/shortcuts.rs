@@ -88,13 +88,15 @@ fn handle_toggle_window<R: Runtime>(app: &AppHandle<R>) {
         let mut is_hidden = state.is_hidden.lock().unwrap();
         *is_hidden = !*is_hidden;
 
-        if let Err(e) = window.emit("toggle-window-visibility", *is_hidden) {
-            eprintln!("Failed to emit toggle-window-visibility event: {}", e);
-        }
-        // When showing (is_hidden=false), bring window to front so user can see it
-        if !*is_hidden {
+        if *is_hidden {
+            let _ = window.hide();
+        } else {
             let _ = window.show();
             let _ = window.set_focus();
+        }
+
+        if let Err(e) = window.emit("toggle-window-visibility", *is_hidden) {
+            eprintln!("Failed to emit toggle-window-visibility event: {}", e);
         }
         return;
     }
@@ -325,6 +327,9 @@ pub fn force_show_window<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
         let _ = window.emit("toggle-window-visibility", false);
     }
 
+    if window.is_minimized().unwrap_or(false) {
+        let _ = window.unminimize();
+    }
     window.show().map_err(|e| format!("Failed to show window: {}", e))?;
     window.set_focus().map_err(|e| format!("Failed to focus window: {}", e))?;
 

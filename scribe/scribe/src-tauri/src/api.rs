@@ -151,8 +151,13 @@ pub async fn transcribe_audio(
     let app_endpoint = get_app_endpoint()?;
     let api_access_key = get_api_access_key()?;
     let machine_id: String = app.machine_uid().get_machine_uid().unwrap().id.unwrap();
-    // Get stored credentials
-    let (license_key, instance_id, _) = get_stored_credentials(&app).await?;
+    // Get stored credentials and selected model (same source used by chat)
+    let (license_key, instance_id, selected_model) = get_stored_credentials(&app).await?;
+    let (provider, model) = selected_model.as_ref().map_or((None, None), |m| {
+        (Some(m.provider.clone()), Some(m.model.clone()))
+    });
+    let provider_header = provider.clone().unwrap_or("None".to_string());
+    let model_header = model.clone().unwrap_or("None".to_string());
 
     // Prepare audio request
     let audio_request = AudioRequest { audio_base64 };
@@ -168,6 +173,8 @@ pub async fn transcribe_audio(
         .header("license_key", &license_key)
         .header("instance", &instance_id)
         .header("machine_id", &machine_id)
+        .header("provider", provider_header)
+        .header("model", model_header)
         .json(&audio_request)
         .send()
         .await

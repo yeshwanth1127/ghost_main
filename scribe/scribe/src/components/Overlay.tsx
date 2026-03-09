@@ -158,11 +158,23 @@ const Overlay: React.FC = () => {
         onMouseUp={handleMouseUp}
       >
         {/* App Logo - leftmost */}
-        <img
-          src={"/ghost_logo.png"}
-          alt="Ghost"
-          className="fixed top-5 left-5 z-[6000] select-none pointer-events-none"
-          style={{ width: 28, height: 28, opacity: 1, filter: "brightness(1.2) contrast(1.1)" }}
+        <div
+          className="fixed top-5 left-5 z-[6000] select-none pointer-events-none bg-primary"
+          style={{
+            width: 40,
+            height: 40,
+            maskImage: "url(/ghost_logo.png)",
+            WebkitMaskImage: "url(/ghost_logo.png)",
+            maskSize: "contain",
+            WebkitMaskSize: "contain",
+            maskRepeat: "no-repeat",
+            WebkitMaskRepeat: "no-repeat",
+            maskPosition: "center",
+            WebkitMaskPosition: "center",
+            filter: "brightness(1.3) saturate(1.6) contrast(1.4) drop-shadow(0 0 8px rgba(255, 154, 139, 0.6))",
+          }}
+          role="img"
+          aria-label="Ghost"
         />
         {/* Instructions */}
         <div className="fixed top-5 left-1/2 transform -translate-x-1/2 bg-black/50 bg-opacity-10 text-white px-6 py-3 font-sans text-xs pointer-events-none z-[5000]">

@@ -80,7 +80,7 @@ export const ModeSelector = ({ onModeSelect }: ModeSelectorProps) => {
   return (
     <div className="w-full flex flex-col items-center justify-center gap-6 p-8">
       <div className="text-center">
-        <h2 className="text-3xl font-semibold tracking-tight mb-2 text-purple-500">
+        <h2 className="text-3xl font-semibold tracking-tight mb-2 text-primary">
           Choose Your Mode
         </h2>
         <p className="text-sm text-muted-foreground/80">

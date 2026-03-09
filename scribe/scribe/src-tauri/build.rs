@@ -1,4 +1,8 @@
 fn main() {
+    // Rebuild when icons change (so taskbar icon updates)
+    println!("cargo:rerun-if-changed=icons/icon.ico");
+    println!("cargo:rerun-if-changed=icons/32x32.png");
+
     // Try to load .env from multiple locations during build
     // build.rs runs from src-tauri/ directory
     let env_paths = vec![".env", "../.env"];

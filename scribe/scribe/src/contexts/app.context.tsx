@@ -160,11 +160,46 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       await ensureInstanceIdForStoredLicense();
 
-      const response: { is_active: boolean } = await invoke(
-        "validate_license_api"
-      );
-      setHasActiveLicense(response.is_active);
+      let response: { is_active: boolean };
+      try {
+        response = await invoke("validate_license_api");
+      } catch {
+        response = { is_active: false };
+      }
 
+      let isActive = response.is_active;
+
+      // Fallback: if Tauri validate returned false but we have a stored license,
+      // try the local validate-license endpoint (used for manual activation).
+      // This handles PAYMENT_ENDPOINT mismatch or when activation was done via admin flow.
+      if (!isActive) {
+        try {
+          const storage = await invoke<{ license_key?: string }>(
+            "secure_storage_get"
+          );
+          const licenseKey = storage?.license_key || "";
+          if (licenseKey) {
+            const fallbackResponse = await fetch(
+              "http://localhost:8083/api/v1/auth/validate-license",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ license_key: licenseKey }),
+              }
+            );
+            if (fallbackResponse.ok) {
+              const data: { activated?: boolean } = await fallbackResponse.json();
+              if (data.activated) {
+                isActive = true;
+              }
+            }
+          }
+        } catch {
+          // Ignore fallback errors
+        }
+      }
+
+      setHasActiveLicense(isActive);
       setIsAdmin(false);
 
       try {
@@ -173,7 +208,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         );
         const licenseKey = storage?.license_key || "";
 
-        if (response.is_active && licenseKey) {
+        if (isActive && licenseKey) {
           try {
             const adminResponse = await fetch(
               "http://localhost:8083/api/v1/auth/validate-license",
@@ -197,7 +232,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
-        if (!response.is_active && licenseKey.startsWith("TRIAL-")) {
+        if (!isActive && licenseKey.startsWith("TRIAL-")) {
           setTrialExpired(true);
         } else {
           setTrialExpired(false);
@@ -206,7 +241,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       // Check if the auto configs are enabled
       const autoConfigsEnabled = localStorage.getItem("auto-configs-enabled");
-      if (response.is_active && !autoConfigsEnabled) {
+      if (isActive && !autoConfigsEnabled) {
         setScreenshotConfiguration({
           mode: "auto",
           autoPrompt: "Analyze the screenshot and provide insights",
@@ -277,14 +312,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
     if (savedSelectedAi) {
       let parsed = JSON.parse(savedSelectedAi);
-      // Migrate deprecated llama3.2 to llama3:latest for Exora/Ollama
-      if (
-        (parsed?.provider === "exora" || parsed?.provider === "ollama") &&
-        parsed?.variables?.model === "llama3.2"
-      ) {
+      // Migrate deprecated Exora/Ollama provider selection to OpenRouter
+      if (parsed?.provider === "exora" || parsed?.provider === "ollama") {
         parsed = {
           ...parsed,
-          variables: { ...parsed.variables, model: "llama3:latest" },
+          provider: "openrouter",
+          variables: {
+            ...parsed.variables,
+            model: parsed?.variables?.model || "openai/gpt-4o-mini",
+          },
         };
         safeLocalStorage.setItem(
           STORAGE_KEYS.SELECTED_AI_PROVIDER,
@@ -293,10 +329,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
       setSelectedAIProvider(parsed);
     } else {
-      // Default to Exora AI (Ollama) when no provider is saved
+      // Default to OpenRouter when no provider is saved
       setSelectedAIProvider({
-        provider: "exora",
-        variables: { model: "llama3:latest" },
+        provider: "openrouter",
+        variables: { model: "openai/gpt-4o-mini" },
       });
     }
 

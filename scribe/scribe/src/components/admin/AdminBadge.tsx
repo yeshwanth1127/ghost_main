@@ -13,9 +13,9 @@ export const AdminBadge = () => {
   }
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 hover:border-purple-500/50 transition-colors">
-      <Shield className="w-3.5 h-3.5 text-purple-400" />
-      <span className="text-xs font-semibold text-purple-300">SUPER ADMIN</span>
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-primary/20 to-accent/20 border border-primary/30 hover:border-primary/50 transition-colors">
+      <Shield className="w-3.5 h-3.5 text-primary" />
+      <span className="text-xs font-semibold text-primary">SUPER ADMIN</span>
     </div>
   );
 };
