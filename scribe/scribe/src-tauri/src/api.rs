@@ -9,7 +9,7 @@ use tauri_plugin_machine_uid::MachineUidExt;
 const LOCAL_BACKEND: &str = "http://127.0.0.1:8083";
 
 fn get_app_endpoint() -> Result<String, String> {
-    // Force local backend when USE_LOCAL_BACKEND=1 or when APP_ENDPOINT points to remote
+    // Force local backend when USE_LOCAL_BACKEND=1 (for local dev only)
     if env::var("USE_LOCAL_BACKEND").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false) {
         return Ok(LOCAL_BACKEND.to_string());
     }
@@ -19,13 +19,8 @@ fn get_app_endpoint() -> Result<String, String> {
         .or_else(|| option_env!("APP_ENDPOINT").map(String::from))
         .unwrap_or_else(|| LOCAL_BACKEND.to_string());
 
-    let trimmed = endpoint.trim();
-    // Override remote URL with local backend for development
-    if trimmed.contains("ghost.exora.solutions") {
-        return Ok(LOCAL_BACKEND.to_string());
-    }
-
-    Ok(trimmed.to_string())
+    let trimmed = endpoint.trim().to_string();
+    Ok(trimmed)
 }
 
 fn get_api_access_key() -> Result<String, String> {
