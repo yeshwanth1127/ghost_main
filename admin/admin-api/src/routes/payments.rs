@@ -1,6 +1,8 @@
 use axum::{
     extract::{Request, State},
     http::StatusCode,
+    response::Redirect,
+    Form,
     Json,
 };
 use axum::body::to_bytes;
@@ -33,6 +35,14 @@ pub struct VerifyPaymentRequest {
     pub razorpay_payment_id: String,
     pub razorpay_subscription_id: String,
     pub razorpay_signature: String,
+}
+
+/// Razorpay POSTs these to callback_url (form-urlencoded) after payment
+#[derive(Debug, Deserialize)]
+pub struct PaymentCallbackForm {
+    pub razorpay_payment_id: Option<String>,
+    pub razorpay_subscription_id: Option<String>,
+    pub razorpay_signature: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -145,6 +155,185 @@ pub async fn create_subscription(
         subscription_id,
         key_id: state.config.razorpay_key_id.clone(),
     }))
+}
+
+/// Razorpay POSTs to callback_url after payment. We redirect to frontend /pay/success with params.
+/// This fixes 405: nginx try_files only handles GET; Razorpay sends POST.
+pub async fn payment_callback(
+    Form(form): Form<PaymentCallbackForm>,
+) -> Redirect {
+    let params = match (
+        form.razorpay_payment_id.as_deref(),
+        form.razorpay_subscription_id.as_deref(),
+        form.razorpay_signature.as_deref(),
+    ) {
+        (Some(pid), Some(sid), Some(sig)) if !pid.is_empty() && !sid.is_empty() && !sig.is_empty() => {
+            format!(
+                "razorpay_payment_id={}&razorpay_subscription_id={}&razorpay_signature={}",
+                urlencoding::encode(pid),
+                urlencoding::encode(sid),
+                urlencoding::encode(sig),
+            )
+        }
+        _ => String::new(),
+    };
+    let url = if params.is_empty() {
+        "/pay/success".to_string()
+    } else {
+        format!("/pay/success?{}", params)
+    };
+    Redirect::to(&url)
+}
+
+/// Sync subscription to DB (plan, token limit, license). Used by webhook as fallback when
+/// user never reached success page. Idempotent - safe to call multiple times.
+async fn sync_subscription_to_db(state: &AppState, subscription_id: &str) -> Result<(), String> {
+    if state.config.razorpay_key_id.is_empty() || state.config.razorpay_key_secret.is_empty() {
+        return Err("Razorpay not configured".into());
+    }
+    let client = reqwest::Client::new();
+    let res = client
+        .get(format!("{}/subscriptions/{}", RAZORPAY_API, subscription_id))
+        .basic_auth(&state.config.razorpay_key_id, Some(&state.config.razorpay_key_secret))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("Razorpay API error: {}", res.status()));
+    }
+    let sub: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let plan_id = sub["plan_id"].as_str().unwrap_or("");
+    let notes = sub.get("notes").and_then(|n| n.as_object());
+    let email = notes
+        .and_then(|n| n.get("email"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let user_id_str = notes
+        .and_then(|n| n.get("user_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let plan = if state.config.razorpay_plan_starter == plan_id {
+        "starter"
+    } else if state.config.razorpay_plan_pro == plan_id {
+        "pro"
+    } else if state.config.razorpay_plan_power == plan_id {
+        "power"
+    } else {
+        "starter"
+    };
+    let token_limit = get_token_limit(plan);
+
+    let mut tx = state.pool.begin().await.map_err(|e| e.to_string())?;
+
+    let user_id: Uuid = if !user_id_str.is_empty() {
+        Uuid::parse_str(user_id_str).map_err(|_| "Invalid user_id".to_string())?
+    } else if !email.is_empty() {
+        let row = sqlx::query("SELECT id FROM users WHERE email = $1")
+            .bind(&email)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        match row {
+            Some(r) => r.get("id"),
+            None => {
+                let uid = Uuid::new_v4();
+                let now = chrono::Utc::now();
+                sqlx::query(
+                    "INSERT INTO users (id, email, plan, monthly_token_limit, tokens_used_this_month, monthly_reset_at, razorpay_subscription_id, created_at, updated_at)
+                     VALUES ($1, $2, $3, $4, 0, $5, $6, $7, $7)",
+                )
+                .bind(&uid)
+                .bind(&email)
+                .bind(plan)
+                .bind(token_limit)
+                .bind(now + chrono::Duration::days(30))
+                .bind(subscription_id)
+                .bind(now)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+                uid
+            }
+        }
+    } else {
+        tx.rollback().await.ok();
+        return Err("No email in subscription notes".into());
+    };
+
+    // Ensure user exists when user_id_str was provided (user_id comes from our DB)
+    if !user_id_str.is_empty() {
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+            .bind(&user_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        if !exists {
+            tx.rollback().await.ok();
+            return Err("User not found".into());
+        }
+    }
+
+    let is_owner: bool = sqlx::query_scalar("SELECT COALESCE(is_owner, false) FROM users WHERE id = $1")
+        .bind(&user_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or(false);
+    if is_owner {
+        tx.rollback().await.ok();
+        return Ok(()); // Skip owner
+    }
+
+    sqlx::query(
+        "UPDATE users SET plan = $1, monthly_token_limit = $2, razorpay_subscription_id = $3, updated_at = NOW() WHERE id = $4 AND COALESCE(is_owner, false) = false",
+    )
+    .bind(plan)
+    .bind(token_limit)
+    .bind(subscription_id)
+    .bind(&user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let updated = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM licenses WHERE user_id = $1 AND COALESCE(is_owner, false) = false",
+    )
+    .bind(&user_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if updated > 0 {
+        sqlx::query(
+            "UPDATE licenses SET tier = $1, is_trial = false, trial_ends_at = NULL, updated_at = NOW() WHERE user_id = $2 AND COALESCE(is_owner, false) = false",
+        )
+        .bind(plan)
+        .bind(&user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    } else {
+        let license_key = crate::routes::auth::generate_license_key();
+        let license_id = Uuid::new_v4();
+        let now = chrono::Utc::now();
+        sqlx::query(
+            "INSERT INTO licenses (id, license_key, user_id, status, tier, max_instances, is_trial, created_at, updated_at)
+             VALUES ($1, $2, $3, 'active', $4, 1, false, $5, $5)",
+        )
+        .bind(&license_id)
+        .bind(&license_key)
+        .bind(&user_id)
+        .bind(plan)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn verify_razorpay_signature(secret: &str, payment_id: &str, subscription_id: &str, signature: &str) -> bool {
@@ -544,7 +733,13 @@ pub async fn webhook(
             }
         }
         "subscription.activated" => {
-            // Subscription is active; no action needed (initial auth already handled by verify)
+            // Fallback: sync plan/token/license when user never reached success page
+            if let Some(sub) = &payload.payload.subscription {
+                let sub_id = sub.entity.id.clone();
+                if let Err(e) = sync_subscription_to_db(&state, &sub_id).await {
+                    tracing::warn!("subscription.activated sync failed for {}: {}", sub_id, e);
+                }
+            }
         }
         _ => {
             // Ignore other events

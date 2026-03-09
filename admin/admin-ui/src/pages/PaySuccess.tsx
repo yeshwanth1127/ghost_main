@@ -66,8 +66,8 @@ export default function PaySuccess() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-12 sm:px-6 sm:py-16 md:px-8 lg:px-12 xl:px-32">
       <div className="w-full max-w-md rounded-lg border border-white/20 bg-white/5 p-6 sm:p-8 mx-4" style={{ fontFamily: "Space Grotesk, sans-serif" }}>
-        <h1 className="mb-4 text-xl sm:text-2xl font-bold" style={{ fontFamily: "Bebas Neue, sans-serif", color: "#ff9a8b" }}>Payment successful</h1>
-        <p className="mb-4 text-white">{message}</p>
+        <h1 className="mb-4 text-xl sm:text-2xl font-bold" style={{ fontFamily: "Bebas Neue, sans-serif", color: "#22c55e" }}>Payment successful</h1>
+        <p className="mb-4 text-white" style={{ color: "#22c55e" }}>{message}</p>
         {licenseKey && (
           <>
             <p className="mb-2 text-sm" style={{ color: "#c96a5b" }}>Your license key:</p>

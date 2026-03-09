@@ -10,6 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -61,6 +62,16 @@ export default function Login() {
       await sendLoginOtp(em);
       setOtpSent(true);
       setOtp("");
+      setResendCooldown(60);
+      const interval = setInterval(() => {
+        setResendCooldown((s) => {
+          if (s <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send code");
     } finally {
@@ -164,10 +175,10 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={handleSendOtp}
-                  disabled={loading}
-                  className="w-full text-sm text-[#ff9a8b] hover:underline"
+                  disabled={loading || resendCooldown > 0}
+                  className="w-full text-sm text-[#ff9a8b] hover:underline disabled:opacity-50 disabled:cursor-not-allowed disabled:no-underline"
                 >
-                  Resend code
+                  {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
                 </button>
               </>
             )}

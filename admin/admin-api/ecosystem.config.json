@@ -1,0 +1,21 @@
+{
+  "apps": [
+    {
+      "name": "ghost-web",
+      "script": "/var/www/ghost/ghost_main/admin/admin-api/target/release/admin-api",
+      "cwd": "/var/www/ghost/ghost_main/admin/admin-api",
+      "instances": 1,
+      "exec_mode": "fork",
+      "error_file": "/var/www/ghost/ghost_main/admin/admin-api/logs/ghost-web-error.log",
+      "out_file": "/var/www/ghost/ghost_main/admin/admin-api/logs/ghost-web-out.log",
+      "log_file": "/var/www/ghost/ghost_main/admin/admin-api/logs/ghost-web.log",
+      "time": true,
+      "autorestart": true,
+      "watch": false,
+      "max_memory_restart": "500M",
+      "merge_logs": true,
+      "kill_timeout": 5000,
+      "listen_timeout": 10000
+    }
+  ]
+}

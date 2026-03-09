@@ -22,6 +22,11 @@ pub struct SendOtpResponse {
     pub message: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct CheckEmailResponse {
+    pub exists: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct VerifyOtpRequest {
     pub email: String,
@@ -44,6 +49,34 @@ pub struct VerifyOtpResponse {
     pub plan: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trial_ends_at: Option<String>,
+}
+
+/// Check if a user with this email already exists (for subscription flow - skip OTP if exists)
+pub async fn check_email(
+    State(state): State<AppState>,
+    Json(req): Json<SendOtpRequest>,
+) -> Result<Json<CheckEmailResponse>, (axum::http::StatusCode, Json<CheckEmailResponse>)> {
+    let email = req.email.trim().to_lowercase();
+    if email.is_empty() || !email.contains('@') {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(CheckEmailResponse { exists: false }),
+        ));
+    }
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)",
+    )
+    .bind(&email)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("check_email error: {}", e);
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(CheckEmailResponse { exists: false }),
+        )
+    })?;
+    Ok(Json(CheckEmailResponse { exists }))
 }
 
 fn hash_otp(otp: &str) -> String {
@@ -88,9 +121,9 @@ pub async fn send_otp(
 
     let otp: String = (0..6).map(|_| rand::random::<u8>() % 10).map(|d| (b'0' + d) as char).collect();
     let otp_hash = hash_otp(&otp);
-    let expires_at = Utc::now() + Duration::minutes(10);
+    let expires_at = Utc::now() + Duration::minutes(15);
 
-    // Delete any existing OTP for this email
+    // Delete any existing OTP for this email (ensures only one valid OTP at a time)
     let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
         .bind(&email)
         .execute(&state.pool)
@@ -117,12 +150,42 @@ pub async fn send_otp(
     })?;
 
     let body = format!(
-        "Your Ghost verification code is: {}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, you can ignore this email.\n\n— Ghost by Exora",
+        "Your Ghost verification code is: {}\n\nThis code expires in 15 minutes.\n\nIf you didn't request this, you can ignore this email.\n\n— Ghost by Exora",
         otp
     );
 
-    let send_err: Option<String> = if !state.config.smtp_username.is_empty() && !state.config.smtp_password.is_empty() {
-        // SMTP (Hostinger, etc.)
+    let send_err: Option<String> = if state.config.otp_log_dev {
+        tracing::info!("[OTP_LOG_DEV] Verification code for {}: {}", email, otp);
+        None
+    } else if !state.config.resend_api_key.is_empty() {
+        // Resend API (reliable from any server; prefer over SMTP)
+        let payload = serde_json::json!({
+            "from": format!("Ghost <{}>", state.config.smtp_from_email),
+            "to": [email],
+            "subject": "Your Ghost verification code",
+            "text": body,
+        });
+        let client = reqwest::Client::new();
+        let res = client
+            .post("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", state.config.resend_api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await;
+        match res {
+            Ok(r) if r.status().is_success() => None,
+            Ok(r) => {
+                let status = r.status();
+                let err_body = r.text().await.unwrap_or_default();
+                tracing::error!("Resend API error: {} - {}", status, err_body);
+                Some(format!("Resend error: {}", status))
+            }
+            Err(e) => Some(e.to_string()),
+        }
+    } else if !state.config.smtp_username.is_empty() && !state.config.smtp_password.is_empty() {
+        // SMTP (Hostinger, etc.) - port 465 = implicit TLS, port 587 = STARTTLS
+        let use_implicit_tls = state.config.smtp_port == 465;
         let message = MessageBuilder::new()
             .from(("Ghost", state.config.smtp_from_email.as_str()))
             .to(vec![(email.as_str(), email.as_str())])
@@ -132,11 +195,14 @@ pub async fn send_otp(
             state.config.smtp_host.as_str(),
             state.config.smtp_port,
         )
-        .implicit_tls(false)
+        .implicit_tls(use_implicit_tls)
         .credentials((state.config.smtp_username.as_str(), state.config.smtp_password.as_str()));
         match smtp.connect().await {
             Ok(mut client) => client.send(message).await.err().map(|e| e.to_string()),
-            Err(e) => Some(e.to_string()),
+            Err(e) => {
+                tracing::error!("SMTP connect error ({}:{}): {}", state.config.smtp_host, state.config.smtp_port, e);
+                Some(e.to_string())
+            }
         }
     } else if !state.config.resend_api_key.is_empty() {
         // Resend API
@@ -170,7 +236,131 @@ pub async fn send_otp(
     };
 
     if let Some(e) = send_err {
-        tracing::error!("Failed to send OTP email: {}", e);
+        tracing::error!("Failed to send OTP email: {} — OTP for {}: {} (check server logs if email not received)", e, email, otp);
+        let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
+            .bind(&email)
+            .execute(&state.pool)
+            .await;
+        return Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(SendOtpResponse {
+                success: false,
+                message: "Failed to send verification code. Please try again.".to_string(),
+            }),
+        ));
+    }
+
+    Ok(Json(SendOtpResponse {
+        success: true,
+        message: "Verification code sent to your email".to_string(),
+    }))
+}
+
+/// Send OTP for subscription flow (works for both new and existing users)
+pub async fn send_subscription_otp(
+    State(state): State<AppState>,
+    Json(req): Json<SendOtpRequest>,
+) -> Result<Json<SendOtpResponse>, (axum::http::StatusCode, Json<SendOtpResponse>)> {
+    let email = req.email.trim().to_lowercase();
+    if email.is_empty() || !email.contains('@') {
+        return Err((
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(SendOtpResponse {
+                success: false,
+                message: "Invalid email address".to_string(),
+            }),
+        ));
+    }
+
+    let otp: String = (0..6).map(|_| rand::random::<u8>() % 10).map(|d| (b'0' + d) as char).collect();
+    let otp_hash = hash_otp(&otp);
+    let expires_at = Utc::now() + Duration::minutes(15);
+
+    let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
+        .bind(&email)
+        .execute(&state.pool)
+        .await;
+
+    sqlx::query(
+        "INSERT INTO otp_verifications (id, email, otp_hash, expires_at) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(Uuid::new_v4())
+    .bind(&email)
+    .bind(&otp_hash)
+    .bind(expires_at)
+    .execute(&state.pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to store OTP: {}", e);
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(SendOtpResponse {
+                success: false,
+                message: "Failed to send verification code".to_string(),
+            }),
+        )
+    })?;
+
+    let body = format!(
+        "Your Ghost verification code is: {}\n\nThis code expires in 15 minutes.\n\nIf you didn't request this, you can ignore this email.\n\n— Ghost by Exora",
+        otp
+    );
+
+    let send_err: Option<String> = if state.config.otp_log_dev {
+        tracing::info!("[OTP_LOG_DEV] Subscription verification code for {}: {}", email, otp);
+        None
+    } else if !state.config.resend_api_key.is_empty() {
+        let payload = serde_json::json!({
+            "from": format!("Ghost <{}>", state.config.smtp_from_email),
+            "to": [email],
+            "subject": "Your Ghost verification code",
+            "text": body,
+        });
+        let client = reqwest::Client::new();
+        let res = client
+            .post("https://api.resend.com/emails")
+            .header("Authorization", format!("Bearer {}", state.config.resend_api_key))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await;
+        match res {
+            Ok(r) if r.status().is_success() => None,
+            Ok(r) => {
+                let status = r.status();
+                let err_body = r.text().await.unwrap_or_default();
+                tracing::error!("Resend API error: {} - {}", status, err_body);
+                Some(format!("Resend error: {}", status))
+            }
+            Err(e) => Some(e.to_string()),
+        }
+    } else if !state.config.smtp_username.is_empty() && !state.config.smtp_password.is_empty() {
+        let use_implicit_tls = state.config.smtp_port == 465;
+        let message = MessageBuilder::new()
+            .from(("Ghost", state.config.smtp_from_email.as_str()))
+            .to(vec![(email.as_str(), email.as_str())])
+            .subject("Your Ghost verification code")
+            .text_body(body.as_str());
+        let smtp = SmtpClientBuilder::new(
+            state.config.smtp_host.as_str(),
+            state.config.smtp_port,
+        )
+        .implicit_tls(use_implicit_tls)
+        .credentials((state.config.smtp_username.as_str(), state.config.smtp_password.as_str()));
+        match smtp.connect().await {
+            Ok(mut client) => client.send(message).await.err().map(|e| e.to_string()),
+            Err(e) => {
+                tracing::error!("SMTP connect error ({}:{}): {}", state.config.smtp_host, state.config.smtp_port, e);
+                Some(e.to_string())
+            }
+        }
+    } else {
+        tracing::info!("[DEV] Subscription OTP for {}: {}", email, otp);
+        None
+    };
+
+    if let Some(e) = send_err {
+        tracing::error!("Failed to send subscription OTP: {} — OTP for {}: {}", e, email, otp);
         let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
             .bind(&email)
             .execute(&state.pool)
@@ -228,7 +418,7 @@ pub async fn send_login_otp(
     // Same OTP logic as send_otp
     let otp: String = (0..6).map(|_| rand::random::<u8>() % 10).map(|d| (b'0' + d) as char).collect();
     let otp_hash = hash_otp(&otp);
-    let expires_at = Utc::now() + Duration::minutes(10);
+    let expires_at = Utc::now() + Duration::minutes(15);
 
     let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
         .bind(&email)
@@ -256,26 +446,13 @@ pub async fn send_login_otp(
     })?;
 
     let body = format!(
-        "Your Ghost verification code is: {}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, you can ignore this email.\n\n— Ghost by Exora",
+        "Your Ghost verification code is: {}\n\nThis code expires in 15 minutes.\n\nIf you didn't request this, you can ignore this email.\n\n— Ghost by Exora",
         otp
     );
 
-    let send_err: Option<String> = if !state.config.smtp_username.is_empty() && !state.config.smtp_password.is_empty() {
-        let message = MessageBuilder::new()
-            .from(("Ghost", state.config.smtp_from_email.as_str()))
-            .to(vec![(email.as_str(), email.as_str())])
-            .subject("Your Ghost verification code")
-            .text_body(body.as_str());
-        let smtp = SmtpClientBuilder::new(
-            state.config.smtp_host.as_str(),
-            state.config.smtp_port,
-        )
-        .implicit_tls(false)
-        .credentials((state.config.smtp_username.as_str(), state.config.smtp_password.as_str()));
-        match smtp.connect().await {
-            Ok(mut client) => client.send(message).await.err().map(|e| e.to_string()),
-            Err(e) => Some(e.to_string()),
-        }
+    let send_err: Option<String> = if state.config.otp_log_dev {
+        tracing::info!("[OTP_LOG_DEV] Login verification code for {}: {}", email, otp);
+        None
     } else if !state.config.resend_api_key.is_empty() {
         let payload = serde_json::json!({
             "from": format!("Ghost <{}>", state.config.smtp_from_email),
@@ -301,13 +478,33 @@ pub async fn send_login_otp(
             }
             Err(e) => Some(e.to_string()),
         }
+    } else if !state.config.smtp_username.is_empty() && !state.config.smtp_password.is_empty() {
+        let use_implicit_tls = state.config.smtp_port == 465;
+        let message = MessageBuilder::new()
+            .from(("Ghost", state.config.smtp_from_email.as_str()))
+            .to(vec![(email.as_str(), email.as_str())])
+            .subject("Your Ghost verification code")
+            .text_body(body.as_str());
+        let smtp = SmtpClientBuilder::new(
+            state.config.smtp_host.as_str(),
+            state.config.smtp_port,
+        )
+        .implicit_tls(use_implicit_tls)
+        .credentials((state.config.smtp_username.as_str(), state.config.smtp_password.as_str()));
+        match smtp.connect().await {
+            Ok(mut client) => client.send(message).await.err().map(|e| e.to_string()),
+            Err(e) => {
+                tracing::error!("SMTP connect error ({}:{}): {}", state.config.smtp_host, state.config.smtp_port, e);
+                Some(e.to_string())
+            }
+        }
     } else {
         tracing::info!("[DEV] Login OTP for {}: {}", email, otp);
         None
     };
 
     if let Some(e) = send_err {
-        tracing::error!("Failed to send OTP email: {}", e);
+        tracing::error!("Failed to send login OTP email: {} — OTP for {}: {} (check server logs if email not received)", e, email, otp);
         let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
             .bind(&email)
             .execute(&state.pool)
@@ -325,6 +522,16 @@ pub async fn send_login_otp(
         success: true,
         message: "Verification code sent to your email".to_string(),
     }))
+}
+
+/// Normalize OTP: extract only ASCII digits (handles copy-paste from email with Unicode/smart chars)
+fn normalize_otp(otp: &str) -> Option<String> {
+    let digits: String = otp.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() == 6 {
+        Some(digits)
+    } else {
+        None
+    }
 }
 
 pub async fn verify_otp(
@@ -350,24 +557,23 @@ pub async fn verify_otp(
         ));
     }
 
-    if otp.len() != 6 || !otp.chars().all(|c| c.is_ascii_digit()) {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(VerifyOtpResponse {
-                success: false,
-                message: "Invalid verification code".to_string(),
-                token: None,
-                user_id: None,
-                email: None,
-                license_key: None,
-                plan: None,
-                trial_ends_at: None,
-            }),
-        ));
-    }
+    let otp = normalize_otp(otp).ok_or((
+        axum::http::StatusCode::BAD_REQUEST,
+        Json(VerifyOtpResponse {
+            success: false,
+            message: "Verification code must be 6 digits".to_string(),
+            token: None,
+            user_id: None,
+            email: None,
+            license_key: None,
+            plan: None,
+            trial_ends_at: None,
+        }),
+    ))?;
 
-    let otp_hash = hash_otp(otp);
+    let otp_hash = hash_otp(&otp);
 
+    // Try to find any valid OTP for this email (in case of timing/race)
     let row = sqlx::query(
         "SELECT id, expires_at FROM otp_verifications WHERE email = $1 AND otp_hash = $2",
     )
@@ -392,22 +598,29 @@ pub async fn verify_otp(
         )
     })?;
 
-    let row = row.ok_or((
-        axum::http::StatusCode::UNAUTHORIZED,
-        Json(VerifyOtpResponse {
-            success: false,
-            message: "Invalid or expired verification code".to_string(),
-            token: None,
-            user_id: None,
-            email: None,
-            license_key: None,
-            plan: None,
-            trial_ends_at: None,
-        }),
-    ))?;
+    let row = row.ok_or_else(|| {
+        // Check if there's an expired OTP for this email (better error message)
+        tracing::warn!("OTP verification failed for {} (no matching code)", email);
+        (
+            axum::http::StatusCode::UNAUTHORIZED,
+            Json(VerifyOtpResponse {
+                success: false,
+                message: "Invalid or expired verification code. Please request a new code.".to_string(),
+                token: None,
+                user_id: None,
+                email: None,
+                license_key: None,
+                plan: None,
+                trial_ends_at: None,
+            }),
+        )
+    })?;
 
     let expires_at: chrono::DateTime<Utc> = row.get("expires_at");
-    if expires_at < Utc::now() {
+    let now = Utc::now();
+    // 1-minute grace period for slow email delivery
+    let grace = now - Duration::minutes(1);
+    if expires_at < grace {
         let _ = sqlx::query("DELETE FROM otp_verifications WHERE email = $1")
             .bind(&email)
             .execute(&state.pool)

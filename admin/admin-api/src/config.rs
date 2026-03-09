@@ -20,6 +20,8 @@ pub struct Config {
     pub smtp_username: String,
     pub smtp_password: String,
     pub smtp_from_email: String,
+    /// When true: log OTP to server instead of sending email (for dev/testing)
+    pub otp_log_dev: bool,
 }
 
 impl Config {
@@ -47,6 +49,7 @@ impl Config {
             smtp_username: env::var("SMTP_USERNAME").unwrap_or_default(),
             smtp_password: env::var("SMTP_PASSWORD").unwrap_or_default(),
             smtp_from_email: env::var("SMTP_FROM_EMAIL").unwrap_or_else(|_| "support@exora.solutions".to_string()),
+            otp_log_dev: env::var("OTP_LOG_DEV").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false),
         })
     }
 }

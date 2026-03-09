@@ -55,11 +55,21 @@ RAZORPAY_PLAN_POWER=plan_xxxx
 RAZORPAY_WEBHOOK_SECRET=xxxx
 
 # SMTP (Hostinger)
+# Email for OTP verification - use ONE of:
+
+# Option A: Resend (recommended - works from any server, free 100/day)
+# 1. Sign up at resend.com
+# 2. Add domain exora.solutions, add DNS records (SPF, DKIM)
+# 3. Create API key, add below
+RESEND_API_KEY=re_xxxxxxxxxxxx
+
+# Option B: Hostinger SMTP (may be blocked from external VPS)
 SMTP_HOST=smtp.hostinger.com
 SMTP_PORT=587
 SMTP_USERNAME=support@exora.solutions
 SMTP_PASSWORD=your_password
 SMTP_FROM_EMAIL=support@exora.solutions
+# If 587 fails, try: SMTP_PORT=465
 ```
 
 ---

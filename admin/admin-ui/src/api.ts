@@ -125,6 +125,24 @@ export interface VerifyOtpResponse {
   trial_ends_at?: string;
 }
 
+export async function checkEmail(email: string): Promise<{ exists: boolean }> {
+  const res = await fetch(`${API_BASE}/trial/check-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseJsonResponse<{ exists: boolean }>(res, "Failed to check email");
+}
+
+export async function sendSubscriptionOtp(email: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/trial/send-subscription-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return parseJsonResponse<{ success: boolean; message: string }>(res, "Failed to send verification code");
+}
+
 export async function sendLoginOtp(email: string): Promise<{ success: boolean; message: string }> {
   const res = await fetch(`${API_BASE}/trial/send-login-otp`, {
     method: "POST",

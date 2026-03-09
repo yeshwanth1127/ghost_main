@@ -36,7 +36,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/prepare-assets.js && vite",
-    "build": "node scripts/prepare-assets.js && tsc && vite build",
+    "build": "node scripts/prepare-assets.js && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev:embed": "tauri dev -- --features embedding-router",

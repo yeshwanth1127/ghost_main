@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { sendTrialOtp, verifyTrialOtp, createSubscription } from "../api";
+import { sendTrialOtp, sendSubscriptionOtp, verifyTrialOtp, createSubscription, checkEmail } from "../api";
 
 const PLANS = [
   { id: "starter", name: "Starter", price: "₹189", desc: "For light usage" },
@@ -8,8 +8,29 @@ const PLANS = [
   { id: "power", name: "Power", price: "₹599", desc: "Maximum capacity" },
 ];
 
+/** Validates email for OTP login. Returns error message or null if valid. */
+function validateEmail(email: string): string | null {
+  const em = email.trim();
+  if (!em) return "Please enter your email";
+  if (em.length > 254) return "Email is too long";
+  if (!em.includes("@")) return "Email must contain @";
+  const [local, domain] = em.split("@");
+  if (!local || local.length === 0) return "Please enter the part before @";
+  if (!domain || domain.length === 0) return "Please enter the domain (e.g. gmail.com)";
+  if (!domain.includes(".")) return "Please enter a valid domain (e.g. gmail.com)";
+  const tld = domain.split(".").pop();
+  if (!tld || tld.length < 2) return "Please enter a valid domain (e.g. gmail.com)";
+  // Basic format: no spaces, no double dots, valid chars
+  if (/\s/.test(em)) return "Email cannot contain spaces";
+  if (/\.\./.test(em)) return "Email format is invalid";
+  if (!/^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(em)) {
+    return "Please enter a valid email (e.g. you@example.com)";
+  }
+  return null;
+}
+
 type TrialModalStep = "email" | "otp" | "success";
-type PayModalStep = "email" | "loading";
+type PayModalStep = "email" | "otp" | "loading";
 
 declare global {
   interface Window {
@@ -39,6 +60,7 @@ export default function Subscriptions() {
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [payStep, setPayStep] = useState<PayModalStep>("email");
   const [payEmail, setPayEmail] = useState("");
+  const [payOtp, setPayOtp] = useState("");
   const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
 
   const customerEmail = localStorage.getItem("customer_email");
@@ -77,15 +99,78 @@ export default function Subscriptions() {
     setSelectedPlan(null);
     setPayStep("email");
     setPayEmail("");
+    setPayOtp("");
     setError("");
   };
 
-  const handleSendOtp = async () => {
-    const em = email.trim();
-    if (!em || !em.includes("@")) {
-      setError("Please enter a valid email");
+  const handlePaySendOtp = async () => {
+    const err = validateEmail(payEmail);
+    if (err) {
+      setError(err);
       return;
     }
+    setError("");
+    setLoading(true);
+    try {
+      const { exists } = await checkEmail(payEmail.trim());
+      if (exists) {
+        await handleStartRazorpay({ email: payEmail.trim() });
+      } else {
+        await sendSubscriptionOtp(payEmail.trim());
+        setPayStep("otp");
+        setPayOtp("");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send code");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePayVerifyOtp = async () => {
+    const err = validateEmail(payEmail);
+    if (err) {
+      setError(err);
+      return;
+    }
+    if (!payOtp.trim() || payOtp.length !== 6) {
+      setError("Please enter the 6-digit code from your email");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const data = await verifyTrialOtp(payEmail.trim(), payOtp.trim());
+      if (data.success && data.token && data.email) {
+        localStorage.setItem("customer_token", data.token);
+        localStorage.setItem("customer_email", data.email);
+        if (data.user_id) localStorage.setItem("customer_user_id", data.user_id);
+        if (data.license_key) localStorage.setItem("customer_license", data.license_key);
+        if (data.plan) localStorage.setItem("customer_plan", data.plan);
+        setPayStep("loading");
+        setError("");
+        handleStartRazorpay({
+          email: data.email,
+          user_id: data.user_id,
+          license_key: data.license_key,
+        });
+      } else {
+        setError(data.message || "Verification failed");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    const err = validateEmail(email);
+    if (err) {
+      setError(err);
+      return;
+    }
+    const em = email.trim();
     setError("");
     setLoading(true);
     try {
@@ -100,11 +185,12 @@ export default function Subscriptions() {
   };
 
   const handleVerifyOtp = async () => {
-    const em = email.trim();
-    if (!em || !em.includes("@")) {
-      setError("Please enter a valid email");
+    const err = validateEmail(email);
+    if (err) {
+      setError(err);
       return;
     }
+    const em = email.trim();
     if (!otp.trim() || otp.length !== 6) {
       setError("Please enter the 6-digit code from your email");
       return;
@@ -132,30 +218,34 @@ export default function Subscriptions() {
     }
   };
 
-  const handleStartRazorpay = async () => {
+  const handleStartRazorpay = async (override?: { email: string; user_id?: string; license_key?: string }) => {
     if (!selectedPlan) return;
-    const em = (isLoggedIn ? customerEmail : payEmail)?.trim();
-    if (!em || !em.includes("@")) {
-      setError("Please enter a valid email");
+    const em = override?.email ?? (isLoggedIn ? customerEmail : payEmail) ?? "";
+    const err = em ? validateEmail(em) : "Please enter your email";
+    if (err) {
+      setError(err);
       return;
     }
+    const trimmedEmail = em.trim();
+    const userId = override?.user_id ?? customerUserId ?? undefined;
+    const licenseKeyParam = override?.license_key ?? customerLicense ?? undefined;
     setError("");
     setLoading(true);
     try {
       const res = await createSubscription(
         selectedPlan.id,
-        em,
-        customerUserId || undefined,
-        customerLicense || undefined
+        trimmedEmail,
+        userId,
+        licenseKeyParam
       );
-      const callbackUrl = `${window.location.origin}/pay/success`;
+      const callbackUrl = `${window.location.origin}/api/payments/callback`;
       const rzp = new window.Razorpay({
         key: res.key_id,
         subscription_id: res.subscription_id,
         name: "Ghost",
         description: `${selectedPlan.name} – ${selectedPlan.price}/mo`,
         callback_url: callbackUrl,
-        prefill: { email: em },
+        prefill: { email: trimmedEmail },
         theme: { color: "#ff9a8b" },
       });
       rzp.open();
@@ -168,17 +258,7 @@ export default function Subscriptions() {
   };
 
   const handlePaySubmit = () => {
-    if (isLoggedIn) {
-      handleStartRazorpay();
-    } else {
-      const em = payEmail.trim();
-      if (!em || !em.includes("@")) {
-        setError("Please enter a valid email");
-        return;
-      }
-      setError("");
-      handleStartRazorpay();
-    }
+    handleStartRazorpay();
   };
 
   return (
@@ -383,7 +463,7 @@ export default function Subscriptions() {
             {payStep === "email" && (
               <>
                 <p className="mb-4 text-sm text-white/80">
-                  Enter your email to continue to Razorpay checkout.
+                  Enter your email. We&apos;ll send a verification code to confirm it before payment.
                 </p>
                 <input
                   type="email"
@@ -396,11 +476,11 @@ export default function Subscriptions() {
                 {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
                 <div className="flex gap-3">
                   <button
-                    onClick={handlePaySubmit}
+                    onClick={handlePaySendOtp}
                     disabled={loading}
                     className="flex-1 rounded-lg border border-white bg-white px-4 py-2.5 font-medium text-black transition-colors hover:bg-white/90 disabled:opacity-70"
                   >
-                    {loading ? "Loading..." : "Continue to payment"}
+                    {loading ? "Sending..." : "Send code"}
                   </button>
                   <button
                     onClick={closePayModal}
@@ -409,6 +489,48 @@ export default function Subscriptions() {
                     Cancel
                   </button>
                 </div>
+              </>
+            )}
+            {payStep === "otp" && (
+              <>
+                <p className="mb-4 text-sm text-white/80">
+                  We sent a 6-digit code to <span className="text-white">{payEmail}</span>. Enter it below.
+                </p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={payOtp}
+                  onChange={(e) => setPayOtp(e.target.value.replace(/\D/g, ""))}
+                  placeholder="000000"
+                  className="mb-4 w-full rounded-lg border border-white/30 bg-black px-3 py-2.5 text-center text-lg tracking-[0.5em] text-white placeholder-white/50 focus:border-[#ff9a8b] focus:outline-none focus:ring-1 focus:ring-[#ff9a8b]"
+                  autoFocus
+                />
+                {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
+                <div className="flex gap-3">
+                  <button
+                    onClick={handlePayVerifyOtp}
+                    disabled={loading}
+                    className="flex-1 rounded-lg border border-white bg-white px-4 py-2.5 font-medium text-black transition-colors hover:bg-white/90 disabled:opacity-70"
+                  >
+                    {loading ? "Verifying..." : "Verify & continue to payment"}
+                  </button>
+                  <button
+                    onClick={() => setPayStep("email")}
+                    disabled={loading}
+                    className="rounded-lg border border-white/30 px-4 py-2.5 font-medium text-white hover:bg-white/10"
+                  >
+                    Back
+                  </button>
+                </div>
+                <button
+                  onClick={handlePaySendOtp}
+                  disabled={loading}
+                  className="mt-3 w-full text-sm text-[#ff9a8b] hover:underline"
+                >
+                  Resend code
+                </button>
               </>
             )}
             {payStep === "loading" && isLoggedIn && (

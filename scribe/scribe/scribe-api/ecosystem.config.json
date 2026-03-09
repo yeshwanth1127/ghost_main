@@ -2,39 +2,20 @@
   "apps": [
     {
       "name": "ghost-api",
-      "script": "/root/ghost/scribe/scribe/scribe-api/target/release/ghost-api",
-      "cwd": "/root/ghost/scribe/scribe/scribe-api",
+      "script": "/var/www/ghost/ghost_main/scribe/scribe/scribe-api/target/release/ghost-api",
+      "cwd": "/var/www/ghost/ghost_main/scribe/scribe/scribe-api",
       "instances": 1,
       "exec_mode": "fork",
-      "env": {
-        "HOST": "0.0.0.0",
-        "PORT": "8081",
-        "RUST_LOG": "scribe_api=debug,info",
-        "DATABASE_URL": "postgresql://postgres:ExoraSolutions2004@localhost:5432/ghost",
-        "REDIS_URL": "redis://localhost:6379",
-        "API_ACCESS_KEY": "ExoraSolutions2004",
-        "OPENROUTER_API_KEY": "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",
-        "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
-        "OPENAI_API_KEY": "sk-placeholder-key",
-        "PAYMENT_PROVIDER": "stripe",
-        "STRIPE_API_KEY": "sk_test_placeholder",
-        "STRIPE_WEBHOOK_SECRET": "whsec_placeholder",
-        "SENTRY_DSN": "",
-      },
-      "error_file": "/root/ghost/scribe/scribe/scribe-api/logs/ghost-api-error.log",
-      "out_file": "/root/ghost/scribe/scribe/scribe-api/logs/ghost-api-out.log",
-      "log_file": "/root/ghost/scribe/scribe/scribe-api/logs/ghost-api.log",
+      "error_file": "/var/www/ghost/ghost_main/scribe/scribe/scribe-api/logs/ghost-api-error.log",
+      "out_file": "/var/www/ghost/ghost_main/scribe/scribe/scribe-api/logs/ghost-api-out.log",
+      "log_file": "/var/www/ghost/ghost_main/scribe/scribe/scribe-api/logs/ghost-api.log",
       "time": true,
       "autorestart": true,
       "watch": false,
       "max_memory_restart": "500M",
       "merge_logs": true,
       "kill_timeout": 5000,
-      "wait_ready": false,
       "listen_timeout": 10000
     }
   ]
 }
-
-
-
